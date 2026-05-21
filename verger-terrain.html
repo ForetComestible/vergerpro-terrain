@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1a0f">
+<title>Mon Terrain 🌿</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg:      #0f1a0f;
+    --panel:   #141f14;
+    --panel2:  #1a2a1a;
+    --border:  #2d422d;
+    --accent:  #7ab648;
+    --accent2: #a8d878;
+    --gold:    #d4a843;
+    --text:    #e8eed8;
+    --muted:   #7a9468;
+    --danger:  #c05c5c;
+    --blue:    #4a9fd4;
+    --purple:  #7a6ad4;
+    --pink:    #c05c8a;
+    --safe: env(safe-area-inset-bottom, 0px);
+  }
+
+  html, body { height: 100%; overflow: hidden; background: var(--bg); font-family: -apple-system, 'Segoe UI', sans-serif; color: var(--text); }
+
+  /* ── ÉCRANS ── */
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; transition: transform 0.3s cubic-bezier(.4,0,.2,1); }
+  .screen.hidden-left  { transform: translateX(-100%); }
+  .screen.hidden-right { transform: translateX(100%); }
+
+  /* ── ÉCRAN ACCUEIL ── */
+  #screen-home {
+    background: var(--bg);
+    align-items: center; justify-content: center;
+    gap: 0; padding: 32px 24px;
+    padding-bottom: calc(32px + var(--safe));
+  }
+  .home-logo { font-size: 56px; margin-bottom: 8px; }
+  .home-title { font-size: 22px; font-weight: 600; color: var(--accent2); margin-bottom: 4px; letter-spacing: -0.3px; }
+  .home-sub { font-size: 14px; color: var(--muted); margin-bottom: 32px; text-align: center; }
+
+  .home-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; width: 100%; margin-bottom: 28px; }
+  .stat-card { background: var(--panel2); border-radius: 14px; padding: 14px 10px; text-align: center; border: 1px solid var(--border); }
+  .stat-num { font-size: 26px; font-weight: 600; color: var(--accent2); line-height: 1; }
+  .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .alert-strip { width: 100%; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.5; display: none; }
+  .alert-water { background: rgba(74,159,212,0.12); border: 1px solid #4a9fd4; color: #a8d4f0; }
+  .alert-gel   { background: rgba(147,197,253,0.1);  border: 1px solid #93c5fd; color: #bfdbfe; }
+
+  .btn-main { width: 100%; padding: 18px; border-radius: 16px; border: none; font-size: 17px; font-weight: 600; cursor: pointer; letter-spacing: -0.2px; transition: transform 0.1s, opacity 0.1s; }
+  .btn-main:active { transform: scale(0.97); opacity: 0.85; }
+  .btn-go { background: var(--accent); color: #0f1a0f; margin-bottom: 12px; }
+  .btn-secondary-home { background: var(--panel2); color: var(--text); border: 1px solid var(--border); font-size: 15px; padding: 15px; }
+  .btn-import-home { background: transparent; color: var(--muted); border: 1px solid var(--border); font-size: 14px; padding: 13px; margin-top: 6px; border-radius: 12px; width: 100%; cursor: pointer; }
+  .btn-import-home:active { opacity: 0.7; }
+
+  /* ── ÉCRAN CARTE ── */
+  #screen-map { background: var(--bg); }
+  #map { flex: 1; width: 100%; }
+
+  /* Barre du haut carte */
+  .map-topbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+    background: rgba(15,26,15,0.88); backdrop-filter: blur(12px);
+    padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .map-back { background: none; border: none; color: var(--accent2); font-size: 22px; cursor: pointer; padding: 4px; line-height: 1; }
+  .map-title { flex: 1; font-size: 15px; font-weight: 500; color: var(--text); }
+  .map-filter-btn { background: var(--panel2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .map-filter-btn.active { border-color: var(--accent); color: var(--accent2); }
+
+  /* Bouton principal flottant */
+  #btn-add-float {
+    position: absolute; bottom: calc(32px + var(--safe)); right: 20px; z-index: 1000;
+    width: 64px; height: 64px; border-radius: 50%;
+    background: var(--accent); border: none; color: #0f1a0f;
+    font-size: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 20px rgba(122,182,72,0.4);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  #btn-add-float:active { transform: scale(0.92); box-shadow: 0 2px 10px rgba(122,182,72,0.3); }
+
+  /* Filtre strates en bas de carte */
+  #strate-filter-bar {
+    position: absolute; bottom: calc(108px + var(--safe)); left: 0; right: 0; z-index: 1000;
+    display: none; padding: 0 16px;
+    flex-wrap: nowrap; gap: 8px; overflow-x: auto;
+  }
+  #strate-filter-bar.open { display: flex; }
+  .sf-chip { background: rgba(20,31,20,0.92); border: 1px solid var(--border); border-radius: 20px; padding: 7px 14px; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; backdrop-filter: blur(8px); }
+  .sf-chip.active { border-color: var(--accent); color: var(--accent2); background: rgba(122,182,72,0.15); }
+
+  /* Overlay GPS */
+  #gps-overlay {
+    position: absolute; bottom: calc(108px + var(--safe)); left: 16px; right: 16px; z-index: 1500;
+    background: rgba(14,22,14,0.95); backdrop-filter: blur(16px);
+    border: 1px solid var(--accent); border-radius: 20px; padding: 18px;
+    display: none; flex-direction: column; gap: 12px;
+  }
+  #gps-overlay.open { display: flex; }
+  .gps-row { display: flex; align-items: center; gap: 10px; }
+  .gps-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; flex-shrink: 0; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+  .gps-label { font-size: 15px; font-weight: 500; color: var(--accent2); }
+  .gps-accuracy { font-size: 28px; font-weight: 600; text-align: center; }
+  .gps-hint { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
+  .gps-bar-wrap { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .gps-bar-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 0.4s, background 0.4s; }
+  .btn-validate { width: 100%; padding: 16px; border-radius: 14px; background: var(--border); color: var(--muted); border: none; font-size: 16px; font-weight: 600; cursor: not-allowed; transition: all 0.2s; }
+  .btn-validate.ready { background: var(--accent); color: #0f1a0f; cursor: pointer; }
+  .btn-validate.ready:active { opacity: 0.85; transform: scale(0.98); }
+  .btn-cancel-gps { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; text-align: center; padding: 4px; }
+
+  /* ── BOTTOM SHEET (fiche + formulaires) ── */
+  .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 2000; pointer-events: none; transition: background 0.25s; }
+  .sheet-overlay.open { background: rgba(0,0,0,0.5); pointer-events: all; }
+  .sheet {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 2001;
+    background: var(--panel); border-radius: 20px 20px 0 0;
+    border-top: 1px solid var(--border);
+    transform: translateY(100%); transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+    max-height: 88vh; overflow-y: auto;
+    padding-bottom: calc(24px + var(--safe));
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
+  .sheet-header { padding: 14px 20px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .sheet-title { flex: 1; font-size: 17px; font-weight: 600; color: var(--accent2); }
+  .sheet-close { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 4px; line-height: 1; }
+  .sheet-body { padding: 16px 20px; }
+
+  /* Formulaire */
+  .form-label { font-size: 12px; color: var(--muted); margin-bottom: 5px; display: block; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-input { width: 100%; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; color: var(--text); font-size: 16px; font-family: inherit; margin-bottom: 14px; -webkit-appearance: none; }
+  .form-input:focus { outline: none; border-color: var(--accent); }
+  .form-select { width: 100%; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; color: var(--text); font-size: 16px; font-family: inherit; margin-bottom: 14px; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a9468' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; }
+
+  /* Auto-complétion */
+  .ac-wrap { position: relative; margin-bottom: 14px; }
+  .ac-wrap .form-input { margin-bottom: 0; }
+  .ac-list { position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: var(--panel2); border: 1px solid var(--accent); border-radius: 12px; overflow: hidden; z-index: 100; display: none; max-height: 200px; overflow-y: auto; }
+  .ac-item { padding: 13px 16px; font-size: 15px; color: var(--text); cursor: pointer; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; }
+  .ac-item:last-child { border-bottom: none; }
+  .ac-item:active { background: rgba(122,182,72,0.12); }
+  .ac-strate { font-size: 11px; color: var(--muted); }
+
+  /* Boutons action sheet */
+  .btn-sheet-primary { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: #0f1a0f; border: none; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
+  .btn-sheet-primary:active { opacity: 0.85; }
+  .btn-sheet-secondary { width: 100%; padding: 14px; border-radius: 14px; background: var(--panel2); color: var(--text); border: 1px solid var(--border); font-size: 15px; cursor: pointer; margin-bottom: 8px; }
+  .btn-sheet-secondary:active { opacity: 0.7; }
+  .btn-sheet-danger { width: 100%; padding: 14px; border-radius: 14px; background: transparent; color: var(--danger); border: 1px solid var(--danger); font-size: 15px; cursor: pointer; }
+
+  /* Catégories journal */
+  .cat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .cat-btn { padding: 12px 6px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel2); color: var(--muted); font-size: 12px; text-align: center; cursor: pointer; font-family: inherit; line-height: 1.4; }
+  .cat-btn.active { border-color: var(--accent); background: rgba(122,182,72,0.12); color: var(--accent2); }
+  .cat-btn:active { opacity: 0.7; }
+
+  /* Journal entries */
+  .journal-entry { display: flex; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
+  .journal-entry:last-child { border-bottom: none; }
+  .je-icon { font-size: 18px; flex-shrink: 0; }
+  .je-body { flex: 1; min-width: 0; }
+  .je-cat { font-size: 13px; font-weight: 500; color: var(--accent2); }
+  .je-note { font-size: 13px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+  .je-date { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  /* Fiche méta */
+  .fiche-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .fiche-badge { font-size: 12px; padding: 4px 10px; border-radius: 20px; background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
+  .fiche-badge.alert { border-color: #93c5fd; color: #bfdbfe; background: rgba(147,197,253,0.1); }
+
+  /* Import */
+  .import-textarea { width: 100%; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; color: var(--text); font-size: 14px; font-family: inherit; height: 180px; resize: none; margin-bottom: 10px; }
+  .import-result { font-size: 13px; color: var(--accent2); min-height: 18px; margin-bottom: 12px; }
+
+  /* Météo home */
+  .meteo-row { display: flex; gap: 8px; width: 100%; margin-bottom: 20px; }
+  .meteo-chip { flex: 1; background: var(--panel2); border-radius: 12px; padding: 10px 6px; text-align: center; border: 1px solid var(--border); }
+  .meteo-val { font-size: 16px; font-weight: 600; color: var(--text); }
+  .meteo-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* Leaflet override */
+  .leaflet-control-zoom { border: 1px solid var(--border) !important; border-radius: 12px !important; overflow: hidden; }
+  .leaflet-control-zoom a { background: var(--panel) !important; color: var(--text) !important; border: none !important; width: 44px !important; height: 44px !important; line-height: 44px !important; font-size: 18px !important; }
+</style>
+</head>
+<body>
+
+<!-- ══ ÉCRAN 1 : ACCUEIL ══ -->
+<div class="screen" id="screen-home">
+  <div class="home-logo">🌿</div>
+  <div class="home-title">Mon Terrain</div>
+  <div class="home-sub">Forêt comestible</div>
+
+  <div class="home-stats">
+    <div class="stat-card"><div class="stat-num" id="cnt-total">0</div><div class="stat-lbl">éléments</div></div>
+    <div class="stat-card"><div class="stat-num" id="cnt-placed">0</div><div class="stat-lbl">placés</div></div>
+    <div class="stat-card"><div class="stat-num" id="cnt-today">0</div><div class="stat-lbl">ce mois</div></div>
+  </div>
+
+  <div id="home-alert-water" class="alert-strip alert-water"></div>
+  <div id="home-alert-gel"   class="alert-strip alert-gel"></div>
+
+  <div class="meteo-row" id="meteo-row" style="display:none;">
+    <div class="meteo-chip"><div class="meteo-val" id="m-rain7">—</div><div class="meteo-lbl">pluie 7j (mm)</div></div>
+    <div class="meteo-chip"><div class="meteo-val" id="m-rain-next">—</div><div class="meteo-lbl">prévu 7j</div></div>
+    <div class="meteo-chip"><div class="meteo-val" id="m-tmin">—</div><div class="meteo-lbl">T° min</div></div>
+  </div>
+
+  <button class="btn-main btn-go" onclick="goToMap()">Aller sur le terrain →</button>
+  <button class="btn-main btn-secondary-home" onclick="openImportSheet()">📋 Importer ma liste</button>
+  <button class="btn-import-home" onclick="refreshMeteo()">🌦 Actualiser météo</button>
+</div>
+
+<!-- ══ ÉCRAN 2 : CARTE ══ -->
+<div class="screen hidden-right" id="screen-map">
+  <div id="map"></div>
+
+  <!-- Barre du haut -->
+  <div class="map-topbar">
+    <button class="map-back" onclick="goHome()">‹</button>
+    <span class="map-title" id="map-topbar-title">Mon terrain</span>
+    <button class="map-filter-btn" id="filter-toggle-btn" onclick="toggleFilterBar()">🌳 Strates</button>
+  </div>
+
+  <!-- Filtres strates -->
+  <div id="strate-filter-bar">
+    <div class="sf-chip active" data-strate="tous" onclick="setStrateFilter(this,'tous')">Tous</div>
+    <div class="sf-chip" data-strate="arbre" onclick="setStrateFilter(this,'arbre')">🌳 Arbres</div>
+    <div class="sf-chip" data-strate="arbuste" onclick="setStrateFilter(this,'arbuste')">🌿 Arbustes</div>
+    <div class="sf-chip" data-strate="herbacee" onclick="setStrateFilter(this,'herbacee')">🌱 Herbacées</div>
+    <div class="sf-chip" data-strate="couvre_sol" onclick="setStrateFilter(this,'couvre_sol')">🍓 Couvre-sol</div>
+    <div class="sf-chip" data-strate="grimpante" onclick="setStrateFilter(this,'grimpante')">🍇 Grimpantes</div>
+  </div>
+
+  <!-- Overlay GPS -->
+  <div id="gps-overlay">
+    <div class="gps-row">
+      <div class="gps-dot"></div>
+      <span class="gps-label">Acquisition GPS…</span>
+    </div>
+    <div class="gps-accuracy" id="gps-acc-display">—</div>
+    <div class="gps-bar-wrap"><div class="gps-bar-fill" id="gps-bar"></div></div>
+    <div class="gps-hint">Approchez-vous de l'élément à géolocaliser.<br>Validez quand la précision est satisfaisante.</div>
+    <button class="btn-validate" id="btn-validate-gps" onclick="validateGps()" disabled>✓ Valider cette position</button>
+    <button class="btn-cancel-gps" onclick="cancelGps()">Annuler</button>
+  </div>
+
+  <!-- Bouton + flottant -->
+  <button id="btn-add-float" onclick="startGps()">＋</button>
+</div>
+
+<!-- ══ BOTTOM SHEETS ══ -->
+<div class="sheet-overlay" id="sheet-overlay" onclick="closeAllSheets()"></div>
+
+<!-- Sheet : Identifier l'élément -->
+<div class="sheet" id="sheet-identify">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">🌱 Identifier cet élément</span>
+    <button class="sheet-close" onclick="closeAllSheets()">×</button>
+  </div>
+  <div class="sheet-body">
+    <div id="sheet-gps-info" style="font-size:12px;color:var(--muted);margin-bottom:14px;"></div>
+    <label class="form-label">Espèce *</label>
+    <div class="ac-wrap">
+      <input type="text" id="inp-nom" class="form-input" placeholder="Figuier, Pommier, Consoude…" autocomplete="off" inputmode="text">
+      <div class="ac-list" id="ac-list"></div>
+    </div>
+    <label class="form-label">Strate</label>
+    <select id="inp-strate" class="form-select">
+      <option value="arbre">🌳 Arbre</option>
+      <option value="arbuste">🌿 Arbuste</option>
+      <option value="herbacee">🌱 Herbacée / Fleur</option>
+      <option value="couvre_sol">🍓 Couvre-sol</option>
+      <option value="grimpante">🍇 Grimpante</option>
+    </select>
+    <label class="form-label">Cultivar (optionnel)</label>
+    <input type="text" id="inp-cultivar" class="form-input" placeholder="Ex: Col de dame noir">
+    <label class="form-label">Année de plantation (optionnel)</label>
+    <input type="number" id="inp-annee" class="form-input" placeholder="2024" inputmode="numeric">
+    <input type="hidden" id="inp-lat">
+    <input type="hidden" id="inp-lng">
+    <button class="btn-sheet-primary" onclick="saveElement()">✓ Enregistrer</button>
+    <button class="btn-sheet-secondary" onclick="closeAllSheets()">Annuler</button>
+  </div>
+</div>
+
+<!-- Sheet : Fiche élément -->
+<div class="sheet" id="sheet-fiche">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-title" id="fiche-title">—</span>
+    <button class="sheet-close" onclick="closeAllSheets()">×</button>
+  </div>
+  <div class="sheet-body" id="fiche-body"></div>
+</div>
+
+<!-- Sheet : Nouvelle entrée journal -->
+<div class="sheet" id="sheet-journal">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">📝 Nouvelle entrée</span>
+    <button class="sheet-close" onclick="showFiche(currentFicheId)">‹ Retour</button>
+  </div>
+  <div class="sheet-body">
+    <label class="form-label">Catégorie</label>
+    <div class="cat-grid">
+      <button class="cat-btn" data-val="✂️ Taille" onclick="selectCat(this)">✂️<br>Taille</button>
+      <button class="cat-btn" data-val="🪹 Paillage" onclick="selectCat(this)">🪹<br>Paillage</button>
+      <button class="cat-btn" data-val="💧 Arrosage" onclick="selectCat(this)">💧<br>Arrosage</button>
+      <button class="cat-btn" data-val="🧺 Récolte" onclick="selectCat(this)">🧺<br>Récolte</button>
+      <button class="cat-btn" data-val="🔍 Observation" onclick="selectCat(this)">🔍<br>Observation</button>
+      <button class="cat-btn" data-val="🌱 Autre" onclick="selectCat(this)">🌱<br>Autre</button>
+    </div>
+    <input type="hidden" id="journal-cat-val">
+    <label class="form-label">Note (optionnel)</label>
+    <textarea class="import-textarea" id="journal-note" placeholder="Observations, quantité récoltée…" style="height:90px;margin-bottom:14px;"></textarea>
+    <button class="btn-sheet-primary" onclick="saveJournalEntry()">Enregistrer</button>
+  </div>
+</div>
+
+<!-- Sheet : Import liste -->
+<div class="sheet" id="sheet-import">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">📋 Importer une liste</span>
+    <button class="sheet-close" onclick="closeAllSheets()">×</button>
+  </div>
+  <div class="sheet-body">
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Collez votre liste — une ligne par élément.<br>Format accepté : <em>Type · Quantité · Nom</em> ou simplement <em>Nom</em></p>
+    <textarea class="import-textarea" id="import-ta" placeholder="Arbre&#9;1&#9;Figuier Col de dame&#10;Grimpante&#9;3&#9;Mûre Triple Crown&#10;Consoude&#10;..."></textarea>
+    <div class="import-result" id="import-result"></div>
+    <button class="btn-sheet-primary" onclick="processImport()">Importer</button>
+    <button class="btn-sheet-secondary" onclick="closeAllSheets()">Annuler</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const ARBRES_DB = [
+  { nom:"Poirier (poire à cuire)", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbre_haute_tige", hauteur:14.0, diametre:8.0, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🍐", sol:["argileux", "limoneux"], roles:[], description:"soleil, mais ok tout sol" },
+  { nom:"Schisandre à fleurs rouges (Baie aux cinq saveurs)", famille:"Petits fruits", guilde:"pommier / poirier / amélanchier", strate:"arbre_haute_tige", hauteur:8.5, diametre:0.4, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🫐", sol:["argileux", "limoneux"], roles:[], description:"tous sols" },
+  { nom:"Poirier (angelica, beurré giffard ou triomphe de vienne)", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbre", hauteur:5.0, diametre:5.0, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍐", sol:["argileux", "limoneux"], roles:[], description:"soleil, mais ok tout sol" },
+  { nom:"Poirier (beurré dumont, comtesse de paris ou jeanne d'arc)", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbre", hauteur:5.0, diametre:5.0, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🍐", sol:["argileux", "limoneux"], roles:[], description:"soleil, mais ok tout sol" },
+  { nom:"Poirier (beurré hardy, conférence ou général leclerc)", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbre", hauteur:5.0, diametre:5.0, tol_ombre:1, ensoleillement_min:6, saison:"hiver", emoji:"🍐", sol:["argileux", "limoneux"], roles:[], description:"soleil, mais ok tout sol" },
+  { nom:"Poirier (comice)", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbre", hauteur:5.0, diametre:5.0, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍐", sol:["argileux", "limoneux"], roles:[], description:"soleil, mais ok tout sol" },
+  { nom:"Poirier (williams)", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbre", hauteur:5.0, diametre:5.0, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍐", sol:["argileux", "limoneux"], roles:[], description:"soleil, mais ok tout sol" },
+  { nom:"Cornouiller mâle", famille:"Petits fruits", guilde:"pommier / poirier / amélanchier", strate:"arbre", hauteur:5.0, diametre:4.0, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🔴", sol:["argileux", "limoneux"], roles:[], description:"Tous sols" },
+  { nom:"Pomme à cuire d'été et d'automne", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"OK pour ombre" },
+  { nom:"Pomme à cuire de garde", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"OK pour ombre" },
+  { nom:"Pomme de début d'automne", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"Fruit" },
+  { nom:"Pomme de fin d'automne", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"hiver", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"Fruit" },
+  { nom:"Pomme de fin d'été", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"Fruit" },
+  { nom:"Pomme de la nouvelle année", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"A mettre plein soleil si possible" },
+  { nom:"Pomme de milieu d'hiver", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"A mettre plein soleil si possible" },
+  { nom:"Pomme de printemps", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"A mettre plein soleil si possible" },
+  { nom:"Pommier (ruby, primo, rubinette, pinova, coxybelle)", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.75, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🍎", sol:["argileux", "limoneux"], roles:[], description:"Fruit" },
+  { nom:"Cognassier", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:3.25, diametre:4.0, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍋", sol:["argileux", "limoneux"], roles:[], description:"cognassier A = OK sol humide" },
+  { nom:"Amélanchier à feuille d'aulne", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:2.5, diametre:2.0, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🫐", sol:["argileux", "limoneux"], roles:[], description:"tous sols" },
+  { nom:"Goumi", famille:"Elaeagnaceae", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:2.5, diametre:2.5, tol_ombre:2, ensoleillement_min:6, saison:"automne", emoji:"🔴", sol:["argileux", "limoneux"], roles:["mellifere", "attire_auxiliaires"], description:"Tous sols, autostérile; 2 variétés nécessaires" },
+  { nom:"Grande capucine", famille:"Autre", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:2.5, diametre:0.4, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere", "attire_auxiliaires"], description:"tous sols" },
+  { nom:"Framboisier \"fall gold\"", famille:"Rosacées", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:2.0, diametre:1.0, tol_ombre:2, ensoleillement_min:6, saison:"automne", emoji:"🍓", sol:["sableux"], roles:[], description:"Tous sols, à laisser reposer sur d'autres petits arbres" },
+  { nom:"Valériane officinale", famille:"Plantes compagnes", guilde:"pommier / poirier / amélanchier", strate:"arbuste", hauteur:1.6, diametre:0.6, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌸", sol:["argileux", "limoneux"], roles:["accumulateur_mineraux", "attire_auxiliaires"], description:"tous sols" },
+  { nom:"Romarin officinal", famille:"Plantes compagnes", guilde:"pommier / poirier / amélanchier", strate:"sous_arbuste", hauteur:1.2, diametre:1.2, tol_ombre:0, ensoleillement_min:6, saison:"ete", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Sol correctement draîné. A planter au printemps, à protéger du vent" },
+  { nom:"Phacélie à feuilles de tanaisie", famille:"Plantes compagnes", guilde:"pommier / poirier / amélanchier", strate:"sous_arbuste", hauteur:0.7, diametre:0.28, tol_ombre:0, ensoleillement_min:6, saison:"mixte", emoji:"💜", sol:["argileux", "limoneux"], roles:["mellifere", "attire_auxiliaires", "engrais_vert"], description:"Méllifère, attire auxiliaire spécifique au pommier. Engrais vert" },
+  { nom:"Achillée milefeuille", famille:"Plantes compagnes", guilde:"pommier / poirier / amélanchier", strate:"sous_arbuste", hauteur:0.6, diametre:0.5, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌼", sol:["argileux", "limoneux"], roles:["repulsif", "attire_auxiliaires"], description:"Attière auxiliaires et pouvoir répulsif sur ravageur des pommes" },
+  { nom:"Bourrache", famille:"Plantes compagnes", guilde:"pommier / poirier / amélanchier", strate:"sous_arbuste", hauteur:0.55, diametre:0.15, tol_ombre:2, ensoleillement_min:5, saison:"mixte", emoji:"💙", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Méllifère, à inclure en zone sauvage" },
+  { nom:"Ciboule de Chine", famille:"Plantes compagnes", guilde:"pommier / poirier / amélanchier", strate:"sous_arbuste", hauteur:0.5, diametre:0.15, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["repulsif"], description:"tous sols" },
+  { nom:"Vigne \"Isabelle\"", famille:"Petits fruits", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"arbre_haute_tige", hauteur:12.5, diametre:1.0, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍇", sol:["sableux"], roles:[], description:"Sol frais mais bien drainé" },
+  { nom:"Pecher", famille:"Prunus", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"arbre", hauteur:4.0, diametre:4.0, tol_ombre:0, ensoleillement_min:6, saison:"automne", emoji:"🍑", sol:["argileux", "limoneux"], roles:[], description:"Pas en sol humide" },
+  { nom:"Nectarinier", famille:"Prunus", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"arbre", hauteur:4.0, diametre:4.0, tol_ombre:0, ensoleillement_min:6, saison:"automne", emoji:"🍑", sol:["argileux", "limoneux"], roles:[], description:"Pas en sol humide" },
+  { nom:"Chevrefeuille de Tartarie", famille:"Arbustes décoratifs", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"arbuste", hauteur:2.0, diametre:1.5, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Méllifère - fruit toxique" },
+  { nom:"Verge d'or du canada (solidage)", famille:"Autre", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"arbuste", hauteur:1.5, diametre:0.5, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Sol drainé" },
+  { nom:"Consoude bleue", famille:"Plantes compagnes", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"sous_arbuste", hauteur:0.95, diametre:0.75, tol_ombre:2, ensoleillement_min:6, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere", "accumulateur_mineraux"], description:"Sol frais" },
+  { nom:"Souci officinale", famille:"Autre", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"sous_arbuste", hauteur:0.6, diametre:0.3, tol_ombre:2, ensoleillement_min:6, saison:"ete", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere", "attire_auxiliaires"], description:"tous sols" },
+  { nom:"Basilic", famille:"Plantes compagnes", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"herbacee", hauteur:0.35, diametre:0.15, tol_ombre:1, ensoleillement_min:5, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Comestible, médicinale, action répulsive sur puceron. Plante méllifère" },
+  { nom:"Myosotis, muscari et anémone blanda", famille:"Plantes compagnes", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"herbacee", hauteur:0.23, diametre:0.15, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Méllifère en même temps que le néctarinier, couvre sol" },
+  { nom:"Potentille arbustive \"Hopley's orange\"", famille:"Plantes compagnes", guilde:"Pêcher et assimilés (nectarinier etc)", strate:"herbacee", hauteur:0.3, diametre:0.3, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere", "attire_auxiliaires"], description:"tous sols mais pas trop acide" },
+  { nom:"Aubepine (ellwangeroana)", famille:"Rosacées", guilde:"Sureau", strate:"arbre", hauteur:5.0, diametre:3.5, tol_ombre:2, ensoleillement_min:6, saison:"automne", emoji:"🌸", sol:["argileux", "limoneux"], roles:[], description:"tous sols" },
+  { nom:"Sureau noir", famille:"Sureau", guilde:"Sureau", strate:"arbre", hauteur:5.0, diametre:5.0, tol_ombre:2, ensoleillement_min:6, saison:"ete", emoji:"🫐", sol:["sableux"], roles:[], description:"Tous sols" },
+  { nom:"Houblon", famille:"Autre", guilde:"Sureau", strate:"arbre", hauteur:4.25, diametre:0.3, tol_ombre:2, ensoleillement_min:6, saison:"hiver", emoji:"🌱", sol:["argileux", "limoneux"], roles:["attire_auxiliaires"], description:"Sol frais mais bien drainé" },
+  { nom:"Mures, Ronce sans épine \"triple crown\"", famille:"Rosacées", guilde:"Sureau", strate:"arbuste", hauteur:3.0, diametre:3.0, tol_ombre:3, ensoleillement_min:6, saison:"automne", emoji:"🫐", sol:["sableux"], roles:["mellifere", "attire_auxiliaires"], description:"Tous sols" },
+  { nom:"Goji", famille:"Petits fruits", guilde:"Sureau", strate:"arbuste", hauteur:2.5, diametre:2.5, tol_ombre:2, ensoleillement_min:6, saison:"hiver", emoji:"🔴", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Tous sols" },
+  { nom:"Arbre aux faisans", famille:"Arbustes décoratifs", guilde:"Sureau", strate:"arbuste", hauteur:2.0, diametre:2.0, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Méllifère - fruit comestible mais au goût de caramel brûlé ? Arbre sacrificiel pour fruit et taille" },
+  { nom:"Groseiller à grappes", famille:"Petits fruits", guilde:"Sureau", strate:"arbuste", hauteur:2.0, diametre:1.0, tol_ombre:3, ensoleillement_min:6, saison:"automne", emoji:"🍇", sol:["argileux", "limoneux"], roles:[], description:"Tous sols" },
+  { nom:"Groseiller à maquereau", famille:"Petits fruits", guilde:"Sureau", strate:"sous_arbuste", hauteur:1.25, diametre:1.25, tol_ombre:2, ensoleillement_min:6, saison:"ete", emoji:"🍇", sol:["argileux", "limoneux"], roles:["mellifere", "accumulateur_mineraux"], description:"Tous sols" },
+  { nom:"Poireau perpetuel", famille:"Rosacées", guilde:"Sureau", strate:"sous_arbuste", hauteur:0.95, diametre:0.15, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍐", sol:["argileux", "limoneux"], roles:["repulsif"], description:"tous sols" },
+  { nom:"Consoude", famille:"Plantes compagnes", guilde:"Sureau", strate:"sous_arbuste", hauteur:0.95, diametre:0.75, tol_ombre:2, ensoleillement_min:6, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere", "accumulateur_mineraux"], description:"Sol frais" },
+  { nom:"Persil japonais \"Mitsuba\"", famille:"Plantes compagnes", guilde:"Sureau", strate:"sous_arbuste", hauteur:0.6, diametre:0.15, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🌱", sol:["argileux", "limoneux"], roles:["repulsif", "attire_auxiliaires"], description:"Sol fertile" },
+  { nom:"Olivier", famille:"Méditerranéens", guilde:"Figuier", strate:"arbre", hauteur:6.0, diametre:7.5, tol_ombre:0, ensoleillement_min:6, saison:"ete", emoji:"🫒", sol:["argileux", "limoneux"], roles:[], description:"Fruit, huile" },
+  { nom:"Arbousier", famille:"Noix & fruits secs", guilde:"Figuier", strate:"arbre", hauteur:7.0, diametre:7.0, tol_ombre:1, ensoleillement_min:6, saison:"hiver", emoji:"🔴", sol:["argileux", "limoneux"], roles:[], description:"acide ou neutre" },
+  { nom:"Liane de madère", famille:"Autre", guilde:"Figuier", strate:"arbre", hauteur:5.0, diametre:1.0, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Feuille comestible comme épinard - Tubercule comestible. Attention tubercule aérien toxique. Plante" },
+  { nom:"Laurier sauce", famille:"Méditerranéens", guilde:"Figuier", strate:"arbre", hauteur:6.0, diametre:6.0, tol_ombre:3, ensoleillement_min:6, saison:"ete", emoji:"🌿", sol:["argileux", "limoneux"], roles:[], description:"Feuille et fruit comme épice. Huile essentielle possible" },
+  { nom:"Figuier", famille:"Figuier", guilde:"Figuier", strate:"arbre", hauteur:4.5, diametre:3.0, tol_ombre:0, ensoleillement_min:6, saison:"automne", emoji:"🌿", sol:["argileux", "limoneux"], roles:[], description:"Sol bien draîné" },
+  { nom:"Arbre de judée", famille:"Fixateurs d'azote", guilde:"Figuier", strate:"arbre", hauteur:5.0, diametre:5.0, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌸", sol:["argileux", "limoneux"], roles:["fixateur_azote", "attire_auxiliaires"], description:"Sol correctement draîné" },
+  { nom:"Poivrier du sichuan", famille:"Méditerranéens", guilde:"Figuier", strate:"arbuste", hauteur:3.5, diametre:3.5, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🌱", sol:["argileux", "limoneux"], roles:[], description:"Tous sols" },
+  { nom:"Myrte commun", famille:"Méditerranéens", guilde:"Figuier", strate:"sous_arbuste", hauteur:1.3, diametre:1.3, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Tous sols, plantation printemps, à protéger vent froid" },
+  { nom:"Germandrée arbustive", famille:"Autre", guilde:"Figuier", strate:"arbuste", hauteur:1.75, diametre:1.25, tol_ombre:0, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Méllifère" },
+  { nom:"Romarin rampant", famille:"Plantes compagnes", guilde:"Figuier", strate:"sous_arbuste", hauteur:1.2, diametre:1.2, tol_ombre:0, ensoleillement_min:6, saison:"ete", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere", "repulsif"], description:"Sol correctement draîné. A planter au printemps, à protéger du vent" },
+  { nom:"Lavande papillon", famille:"Plantes compagnes", guilde:"Figuier", strate:"sous_arbuste", hauteur:0.75, diametre:0.75, tol_ombre:0, ensoleillement_min:6, saison:"automne", emoji:"💜", sol:["argileux", "limoneux"], roles:["mellifere", "repulsif"], description:"Sol drainé" },
+  { nom:"Thym d'hiver", famille:"Plantes compagnes", guilde:"Figuier", strate:"herbacee", hauteur:0.25, diametre:0.3, tol_ombre:0, ensoleillement_min:6, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["repulsif"], description:"Médicinale, aromatique, répulsif ravageur" },
+  { nom:"Prunier (début été)", famille:"Prunus", guilde:"Prunier", strate:"arbre", hauteur:4.0, diametre:4.0, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍑", sol:["argileux", "limoneux"], roles:[], description:"Myrobolan tolère sol humide mais 6*7m haut et large. Les autres OK tout sol et plus petit" },
+  { nom:"Prunier (fin été)", famille:"Prunus", guilde:"Prunier", strate:"arbre", hauteur:4.0, diametre:4.0, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍑", sol:["argileux", "limoneux"], roles:[], description:"Myrobolan tolère sol humide mais 6*7m haut et large. Les autres OK tout sol et plus petit" },
+  { nom:"Epine vinette de Frikart \"Amstelveen\"", famille:"Prunus", guilde:"Prunier", strate:"arbuste", hauteur:3.0, diametre:2.0, tol_ombre:2, ensoleillement_min:6, saison:"automne", emoji:"🌱", sol:["argileux", "limoneux"], roles:[], description:"Tous sols" },
+  { nom:"Coronille des jardins", famille:"Fixateurs d'azote", guilde:"Prunier", strate:"arbuste", hauteur:1.75, diametre:1.5, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["fixateur_azote", "mellifere"], description:"Fixatrice d'azote, méllifère, sacrificielle" },
+  { nom:"Framboisier \"Golden Everest\"", famille:"Rosacées", guilde:"Prunier", strate:"arbuste", hauteur:2.0, diametre:1.0, tol_ombre:2, ensoleillement_min:6, saison:"automne", emoji:"🍓", sol:["sableux"], roles:[], description:"Tous sols, à laisser reposer sur d'autres petits arbres" },
+  { nom:"Consoude à grandes fleurs \"Sky blue pink\"", famille:"Plantes compagnes", guilde:"Prunier", strate:"sous_arbuste", hauteur:0.95, diametre:0.75, tol_ombre:2, ensoleillement_min:6, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere", "accumulateur_mineraux"], description:"Sol frais" },
+  { nom:"Grande camomille (tanacetum)", famille:"Plantes compagnes", guilde:"Prunier", strate:"sous_arbuste", hauteur:0.6, diametre:0.25, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🌱", sol:["argileux", "limoneux"], roles:["repulsif", "attire_auxiliaires"], description:"Sol correctement drainé" },
+  { nom:"Ail de Naples", famille:"Plantes compagnes", guilde:"Prunier", strate:"sous_arbuste", hauteur:0.5, diametre:0.15, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["repulsif"], description:"tous sols" },
+  { nom:"Narcisse des poètes", famille:"Plantes compagnes", guilde:"Prunier", strate:"herbacee", hauteur:0.3, diametre:0.15, tol_ombre:3, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Méllifère, couvre sol" },
+  { nom:"Vigne \"noah\"", famille:"Petits fruits", guilde:"Cerisier", strate:"arbre_haute_tige", hauteur:12.5, diametre:1.0, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🍇", sol:["sableux"], roles:[], description:"Sol frais mais bien drainé" },
+  { nom:"Olivier de bohème", famille:"Elaeagnaceae", guilde:"Cerisier", strate:"arbre", hauteur:7.5, diametre:4.0, tol_ombre:3, ensoleillement_min:6, saison:"automne", emoji:"🫒", sol:["argileux", "limoneux"], roles:["brise_vent"], description:"Tous sols" },
+  { nom:"Cerisier (prunus avium - cerise douce, sucrée)", famille:"Prunus", guilde:"Cerisier", strate:"arbuste", hauteur:2.75, diametre:2.0, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🍒", sol:["argileux", "limoneux"], roles:[], description:"Sol bien drainé" },
+  { nom:"Gattelier blanc", famille:"Autre", guilde:"Cerisier", strate:"arbuste", hauteur:3.0, diametre:3.0, tol_ombre:0, ensoleillement_min:6, saison:"automne", emoji:"🌱", sol:["argileux", "limoneux"], roles:["attire_auxiliaires"], description:"Tous sols, plantation printemps, à protéger vent froid" },
+  { nom:"Photonia de fraser", famille:"Rosacées", guilde:"Cerisier", strate:"arbuste", hauteur:2.0, diametre:1.5, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere", "attire_auxiliaires"], description:"Méllifère - fruit toxique. Attire les auxiliaires." },
+  { nom:"Cerisier (prunus cerasus - cerise acide)", famille:"Prunus", guilde:"Cerisier", strate:"arbuste", hauteur:2.0, diametre:1.5, tol_ombre:2, ensoleillement_min:6, saison:"automne", emoji:"🍒", sol:["argileux", "limoneux"], roles:[], description:"colt (3,5x3,5) ou gisela (2x1,5), ok au nord sans soleil" },
+  { nom:"Groseillier à grappes \"Gloire des sablons\"", famille:"Petits fruits", guilde:"Cerisier", strate:"arbuste", hauteur:2.0, diametre:1.0, tol_ombre:3, ensoleillement_min:6, saison:"automne", emoji:"🍇", sol:["argileux", "limoneux"], roles:[], description:"Fruit, tolère l'ombre. Guilde cerisier, attire les prédateurs des ravageurs des cerisiers" },
+  { nom:"Réglisse du Yunnan", famille:"Fixateurs d'azote", guilde:"Cerisier", strate:"sous_arbuste", hauteur:1.25, diametre:0.5, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🌱", sol:["argileux", "limoneux"], roles:["fixateur_azote", "mellifere", "accumulateur_mineraux"], description:"Sol profond, bien drainé et pas trop acide" },
+  { nom:"Menthe africaine", famille:"Plantes compagnes", guilde:"Cerisier", strate:"sous_arbuste", hauteur:0.9, diametre:0.15, tol_ombre:2, ensoleillement_min:6, saison:"ete", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere", "accumulateur_mineraux"], description:"Mojito et autre :-) Méllifère, accumulatrice de nutriments. Vertues médicinales" },
+  { nom:"Sauge blanche de californie", famille:"Plantes compagnes", guilde:"Cerisier", strate:"sous_arbuste", hauteur:0.6, diametre:1.0, tol_ombre:1, ensoleillement_min:6, saison:"ete", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere", "repulsif", "attire_auxiliaires"], description:"Sol correctement draîné." },
+  { nom:"Chataignier", famille:"Noix & fruits secs", guilde:"Néflier", strate:"arbre_haute_tige", hauteur:17.5, diametre:12.5, tol_ombre:1, ensoleillement_min:6, saison:"automne", emoji:"🌰", sol:["argileux", "limoneux"], roles:[], description:"Sol bien drainé, acide à neutre" },
+  { nom:"Néflier", famille:"Rosacées", guilde:"Néflier", strate:"arbre", hauteur:5.0, diametre:4.0, tol_ombre:2, ensoleillement_min:6, saison:"hiver", emoji:"🍋", sol:["argileux", "limoneux"], roles:[], description:"porte greffe aubépine tolère tous les sols 5m sur 5m)" },
+  { nom:"Noisetier", famille:"Noix & fruits secs", guilde:"Néflier", strate:"arbre", hauteur:5.5, diametre:5.5, tol_ombre:3, ensoleillement_min:6, saison:"automne", emoji:"🌰", sol:["argileux", "limoneux"], roles:[], description:"Sol bien drainé, pollinisation croisée meilleure" },
+  { nom:"Chalef de Ebbing \"Gilt Edge\"", famille:"Elaeagnaceae", guilde:"Néflier", strate:"arbre", hauteur:4.0, diametre:4.0, tol_ombre:3, ensoleillement_min:6, saison:"printemps", emoji:"🌿", sol:["argileux", "limoneux"], roles:["brise_vent"], description:"Tous sols" },
+  { nom:"Baie de mai (chevrefeuille bleu)", famille:"Petits fruits", guilde:"Néflier", strate:"arbuste", hauteur:1.5, diametre:1.5, tol_ombre:2, ensoleillement_min:5, saison:"ete", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Tous sols" },
+  { nom:"Consoude panachée Goldsmith", famille:"Plantes compagnes", guilde:"Néflier", strate:"sous_arbuste", hauteur:0.95, diametre:0.75, tol_ombre:2, ensoleillement_min:6, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere", "accumulateur_mineraux"], description:"Sol frais" },
+  { nom:"Aneth", famille:"Plantes compagnes", guilde:"Néflier", strate:"sous_arbuste", hauteur:0.8, diametre:0.6, tol_ombre:1, ensoleillement_min:5, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere", "attire_auxiliaires"], description:"Attire auxiliaire, méllifère, comestible, médicinale" },
+  { nom:"Genêts à balai", famille:"Autre", guilde:"Néflier", strate:"arbuste", hauteur:1.75, diametre:1.75, tol_ombre:2, ensoleillement_min:6, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Sol bien drainé" },
+  { nom:"Mauve musquée", famille:"Plantes compagnes", guilde:"Néflier", strate:"sous_arbuste", hauteur:0.8, diametre:0.25, tol_ombre:2, ensoleillement_min:6, saison:"ete", emoji:"🌸", sol:["argileux", "limoneux"], roles:["accumulateur_mineraux"], description:"Sol pas trop acide, ni trop riche" },
+  { nom:"Sauge des bois", famille:"Plantes compagnes", guilde:"Néflier", strate:"sous_arbuste", hauteur:0.55, diametre:0.4, tol_ombre:1, ensoleillement_min:6, saison:"mixte", emoji:"🌿", sol:["argileux", "limoneux"], roles:["mellifere"], description:"Méllifère sur longue période, couvre sol" },
+  { nom:"Lamier pourpre", famille:"Plantes compagnes", guilde:"Néflier", strate:"herbacee", hauteur:0.33, diametre:0.3, tol_ombre:1, ensoleillement_min:5, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere", "attire_auxiliaires"], description:"Comestible, médicinale. Plante méllifère et attire auxiliaire" },
+  { nom:"Petite pervenche", famille:"Plantes compagnes", guilde:"Néflier", strate:"herbacee", hauteur:0.33, diametre:0.25, tol_ombre:4, ensoleillement_min:5, saison:"mixte", emoji:"🌱", sol:["argileux", "limoneux"], roles:["mellifere"], description:"tous sols" },
+];
+
+// ================================================================
+// STATE
+// ================================================================
+let inventaire = [];
+let currentFicheId = null;
+let gpsWatchId = null;
+let gpsBestPos = null;
+let invFilterStrate = 'tous';
+let meteoData = null;
+let lastMeteoFetch = 0;
+
+const STRATE_COLORS = {
+  arbre:'#7ab648', arbuste:'#4a9fd4', herbacee:'#d4a843',
+  couvre_sol:'#c05c8a', grimpante:'#7a6ad4'
+};
+
+const RUSTICITE = {
+  'citrus':-5,'mandarin':-7,'yuzu':-10,'oranger':-3,'clémentin':-4,
+  'avocat':-3,'avocatier':-3,'feijoa':-10,'caroubier':-5,'goyavier':-3,
+  'pistachier':-10,'jujubier':-15,'pacanier':-20,'asiminier':-20
+};
+
+// ================================================================
+// CARTE
+// ================================================================
+let map, satelliteLayer;
+let mapInitialized = false;
+
+function initMap(lat, lng){
+  if(mapInitialized) return;
+  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([lat, lng], 19);
+  satelliteLayer = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 21, maxNativeZoom: 19 }
+  ).addTo(map);
+  L.control.zoom({ position: 'bottomleft' }).addTo(map);
+  mapInitialized = true;
+  // Charger les marqueurs existants
+  inventaire.forEach(item => {
+    if(item.lat && item.lng) item.marker = createMarker(item);
+  });
+}
+
+// ================================================================
+// NAVIGATION
+// ================================================================
+function goToMap(){
+  document.getElementById('screen-home').classList.add('hidden-left');
+  document.getElementById('screen-map').classList.remove('hidden-right');
+}
+
+function goHome(){
+  document.getElementById('screen-map').classList.add('hidden-right');
+  document.getElementById('screen-home').classList.remove('hidden-left');
+  updateHomeStats();
+}
+
+// ================================================================
+// GPS
+// ================================================================
+function startGps(){
+  if(!navigator.geolocation){ alert('GPS non disponible'); return; }
+  gpsBestPos = null;
+  const overlay = document.getElementById('gps-overlay');
+  overlay.classList.add('open');
+  document.getElementById('btn-validate-gps').disabled = true;
+  document.getElementById('btn-validate-gps').classList.remove('ready');
+  document.getElementById('gps-acc-display').textContent = '—';
+  document.getElementById('gps-bar').style.width = '0%';
+
+  gpsWatchId = navigator.geolocation.watchPosition(
+    onGpsUpdate,
+    err => { cancelGps(); alert('Signal GPS indisponible — réessayez en extérieur'); },
+    { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+  );
+}
+
+function onGpsUpdate(pos){
+  const acc = Math.round(pos.coords.accuracy);
+  const lat = pos.coords.latitude, lng = pos.coords.longitude;
+  gpsBestPos = pos;
+
+  // Initialiser la carte si pas encore fait
+  if(!mapInitialized) initMap(lat, lng);
+  else map.setView([lat, lng], Math.max(map.getZoom(), 19));
+
+  // Afficher la précision
+  const color = acc<=5 ? '#7ab648' : acc<=10 ? '#d4a843' : acc<=20 ? '#e08040' : '#c05c5c';
+  const pct = Math.max(0, Math.min(100, 100 - (acc-2)*3));
+  document.getElementById('gps-acc-display').innerHTML = `<span style="color:${color}">±${acc}m</span>`;
+  document.getElementById('gps-bar').style.cssText = `width:${pct}%;background:${color}`;
+
+  // Activer valider
+  const btn = document.getElementById('btn-validate-gps');
+  btn.disabled = false;
+  btn.classList.add('ready');
+}
+
+function validateGps(){
+  if(!gpsBestPos) return;
+  stopGpsWatch();
+  document.getElementById('gps-overlay').classList.remove('open');
+  const lat = gpsBestPos.coords.latitude, lng = gpsBestPos.coords.longitude;
+  const acc = Math.round(gpsBestPos.coords.accuracy);
+  openIdentifySheet(lat, lng, acc);
+}
+
+function cancelGps(){
+  stopGpsWatch();
+  document.getElementById('gps-overlay').classList.remove('open');
+  gpsBestPos = null;
+}
+
+function stopGpsWatch(){
+  if(gpsWatchId !== null){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+}
+
+// ================================================================
+// SHEET : IDENTIFIER
+// ================================================================
+function openIdentifySheet(lat, lng, acc){
+  document.getElementById('inp-lat').value = lat;
+  document.getElementById('inp-lng').value = lng;
+  document.getElementById('inp-nom').value = '';
+  document.getElementById('inp-nom').dataset.emoji = '';
+  document.getElementById('inp-cultivar').value = '';
+  document.getElementById('inp-annee').value = '';
+  document.getElementById('inp-strate').value = 'arbre';
+  document.getElementById('sheet-gps-info').textContent = acc ? `📍 Position enregistrée · Précision ±${acc}m` : '';
+
+  openSheet('sheet-identify');
+  setTimeout(() => {
+    setupAC();
+    document.getElementById('inp-nom').focus();
+  }, 350);
+}
+
+function setupAC(){
+  const input = document.getElementById('inp-nom');
+  const list  = document.getElementById('ac-list');
+  let debounce;
+  input.oninput = () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      const q = input.value.trim().toLowerCase();
+      if(q.length < 2){ list.style.display='none'; return; }
+      const matches = ARBRES_DB.filter(a => a.nom.toLowerCase().includes(q)).slice(0,7);
+      if(!matches.length){ list.style.display='none'; return; }
+      list.innerHTML = matches.map(a =>
+        `<div class="ac-item" onclick="pickAC('${a.nom.replace(/'/g,"\'")}','${a.strate}','${a.emoji}')">
+          <span style="font-size:20px">${a.emoji}</span>
+          <div><div>${a.nom}</div><div class="ac-strate">${a.strate}</div></div>
+        </div>`).join('');
+      list.style.display = 'block';
+    }, 250);
+  };
+  document.addEventListener('click', e => {
+    if(!input.contains(e.target) && !list.contains(e.target)) list.style.display = 'none';
+  }, { once: true });
+}
+
+function pickAC(nom, strate, emoji){
+  document.getElementById('inp-nom').value = nom;
+  document.getElementById('inp-nom').dataset.emoji = emoji;
+  document.getElementById('inp-strate').value = strate;
+  document.getElementById('ac-list').style.display = 'none';
+}
+
+function saveElement(){
+  const nom = document.getElementById('inp-nom').value.trim();
+  if(!nom){ alert('Nom obligatoire'); return; }
+  const lat = parseFloat(document.getElementById('inp-lat').value);
+  const lng = parseFloat(document.getElementById('inp-lng').value);
+  const hasCoords = !isNaN(lat) && !isNaN(lng) && (lat!==0||lng!==0);
+  const strate   = document.getElementById('inp-strate').value;
+  const cultivar = document.getElementById('inp-cultivar').value.trim();
+  const annee    = document.getElementById('inp-annee').value;
+  const emoji    = document.getElementById('inp-nom').dataset.emoji || emojiFor(nom, strate);
+  const rusticite = getRusticite(nom);
+
+  const item = {
+    id: Date.now() + Math.random(),
+    nom, strate, cultivar, annee,
+    lat: hasCoords ? lat : null,
+    lng: hasCoords ? lng : null,
+    emoji, rusticite, journal: [],
+    positioned: hasCoords,
+    createdAt: new Date().toISOString()
+  };
+
+  if(hasCoords && mapInitialized){
+    try { item.marker = createMarker(item); } catch(e){ item.marker = null; }
+  }
+
+  inventaire.push(item);
+  save();
+  closeAllSheets();
+  updateHomeStats();
+  toast(`✅ ${emoji} ${nom} ajouté`);
+}
+
+// ================================================================
+// MARQUEURS
+// ================================================================
+function createMarker(item){
+  if(!item.lat||!item.lng||isNaN(item.lat)||isNaN(item.lng)) return null;
+  const color = STRATE_COLORS[item.strate] || '#888';
+  const recent = item.journal.length > 0 &&
+    (Date.now() - new Date(item.journal[0].date).getTime()) < 30*86400000;
+
+  // Cercle couronne
+  const dbItem = ARBRES_DB.find(a => a.nom.toLowerCase().includes(item.nom.toLowerCase().substring(0,8)));
+  const diam = dbItem ? dbItem.diametre : (item.strate==='arbre'?5:item.strate==='arbuste'?2:0.5);
+  const circle = L.circle([item.lat, item.lng], {
+    radius: diam/2, color, weight: 1.5,
+    fillColor: color, fillOpacity: 0.10, interactive: false
+  }).addTo(map);
+
+  const icon = L.divIcon({
+    html: `<div style="transform:translateX(-50%);text-align:center;pointer-events:none;">
+      <div style="background:${color};color:#fff;font-size:10px;font-weight:600;padding:3px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.5);max-width:80px;overflow:hidden;text-overflow:ellipsis;">
+        ${item.emoji} ${item.nom.substring(0,12)}
+      </div>${recent?'<div style="font-size:8px;margin-top:1px;">🟢</div>':''}
+    </div>`,
+    className:'', iconAnchor:[0,0]
+  });
+
+  const m = L.marker([item.lat, item.lng], {icon})
+    .addTo(map)
+    .on('click', () => showFiche(item.id));
+
+  // Stocker le cercle dans le marker pour le filtrage
+  m._circle = circle;
+
+  if(invFilterStrate!=='tous' && item.strate!==invFilterStrate){
+    m.setOpacity(0); m.options.interactive=false;
+    circle.setStyle({opacity:0,fillOpacity:0});
+  }
+  return m;
+}
+
+// ================================================================
+// FICHE ÉLÉMENT
+// ================================================================
+function showFiche(id){
+  currentFicheId = id;
+  const item = inventaire.find(i => i.id===id);
+  if(!item) return;
+
+  document.getElementById('fiche-title').textContent = `${item.emoji} ${item.nom}`;
+
+  const rusticiteInfo = item.rusticite != null
+    ? `<div class="fiche-badge alert">🌡️ Gel si < ${item.rusticite}°C</div>` : '';
+  const planted = item.annee ? `<div class="fiche-badge">📅 ${item.annee}</div>` : '';
+  const cultivarBadge = item.cultivar ? `<div class="fiche-badge">${item.cultivar}</div>` : '';
+  const locBadge = item.positioned
+    ? `<div class="fiche-badge">📍 Géolocalisé</div>`
+    : `<div class="fiche-badge" style="border-color:var(--gold);color:var(--gold);">⚠️ À positionner</div>`;
+
+  const entries = item.journal.slice(0,8).map(e => {
+    const icon = e.cat.split(' ')[0];
+    const cat  = e.cat.split(' ').slice(1).join(' ');
+    return `<div class="journal-entry">
+      <div class="je-icon">${icon}</div>
+      <div class="je-body">
+        <div class="je-cat">${cat}</div>
+        ${e.note ? `<div class="je-note">${e.note}</div>` : ''}
+        <div class="je-date">${new Date(e.date).toLocaleDateString('fr-FR',{day:'numeric',month:'long'})}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('fiche-body').innerHTML = `
+    <div class="fiche-meta">
+      <div class="fiche-badge">${item.strate}</div>
+      ${cultivarBadge}${planted}${locBadge}${rusticiteInfo}
+    </div>
+    <p style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:10px;">
+      📖 Journal ${item.journal.length ? '('+item.journal.length+' entrée'+(item.journal.length>1?'s':'')+')' : '(vide)'}
+    </p>
+    ${entries || '<p style="font-size:13px;color:var(--muted);font-style:italic;">Aucune entrée — commencez à suivre cet élément.</p>'}
+    <button class="btn-sheet-primary" style="margin-top:14px;" onclick="openJournalSheet()">+ Nouvelle entrée</button>
+    <button class="btn-sheet-secondary" onclick="deleteElement(${id})">🗑 Supprimer cet élément</button>
+  `;
+
+  openSheet('sheet-fiche');
+}
+
+function openJournalSheet(){
+  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('journal-cat-val').value='';
+  document.getElementById('journal-note').value='';
+  closeSheet('sheet-fiche');
+  openSheet('sheet-journal');
+}
+
+function selectCat(btn){
+  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('journal-cat-val').value = btn.dataset.val;
+}
+
+function saveJournalEntry(){
+  const cat = document.getElementById('journal-cat-val').value;
+  if(!cat){ alert('Choisissez une catégorie'); return; }
+  const note = document.getElementById('journal-note').value.trim();
+  const item = inventaire.find(i=>i.id===currentFicheId);
+  if(!item) return;
+  item.journal.unshift({ cat, note, date: new Date().toISOString() });
+  if(cat.includes('Arrosage')) item.lastWatered = item.journal[0].date;
+  save();
+  // Recrée le marqueur pour mettre à jour le 🟢
+  if(item.marker){ map.removeLayer(item.marker); if(item.marker._circle) map.removeLayer(item.marker._circle); }
+  if(item.lat && item.lng) item.marker = createMarker(item);
+  toast('✅ Entrée enregistrée');
+  showFiche(currentFicheId);
+}
+
+function deleteElement(id){
+  if(!confirm('Supprimer cet élément ?')) return;
+  const item = inventaire.find(i=>i.id===id);
+  if(item?.marker){ map.removeLayer(item.marker); if(item.marker._circle) map.removeLayer(item.marker._circle); }
+  inventaire = inventaire.filter(i=>i.id!==id);
+  save(); updateHomeStats(); closeAllSheets();
+  toast('🗑 Supprimé');
+}
+
+// ================================================================
+// IMPORT
+// ================================================================
+function openImportSheet(){ openSheet('sheet-import'); }
+
+function processImport(){
+  const raw = document.getElementById('import-ta').value.trim();
+  if(!raw) return;
+  let recognised=0, unknown=0, total=0;
+
+  raw.split('\n').forEach(line => {
+    line = line.trim();
+    if(!line) return;
+    let nom='', qty=1, strate='arbre';
+
+    if(line.includes('\t')){
+      const p = line.split('\t');
+      const t = (p[0]||'').toLowerCase();
+      qty = parseInt(p[1])||1;
+      nom = (p[2]||'').replace(/\s*[×x]\s*\d+.*$/,'').trim();
+      if(t.includes('fleur')||t.includes('légume')||t.includes('aromate')) strate='herbacee';
+      else if(t.includes('grimpante')) strate='grimpante';
+      else if(t.includes('petits')) strate='arbuste';
+    } else {
+      const mx = line.match(/^(.+?)\s*[×x]\s*(\d+)/i);
+      if(mx){ nom=mx[1].trim(); qty=parseInt(mx[2])||1; } else nom=line;
+    }
+
+    nom = nom.replace(/\(Porte-greffe.*$/i,'').replace(/\(Hauteur.*$/i,'')
+             .replace(/\s*[×x]\s*\d+.*$/,'').replace(/\s*-\s*Pot de.*$/i,'')
+             .replace(/^\s*"/, '').replace(/"\s*$/, '').trim();
+    if(!nom||nom.length<2) return;
+
+    const db = ARBRES_DB.find(a =>
+      a.nom.toLowerCase().includes(nom.toLowerCase().substring(0,Math.min(nom.length,8)))||
+      nom.toLowerCase().includes(a.nom.toLowerCase().substring(0,Math.min(a.nom.length,6)))
+    );
+    const emoji  = db ? db.emoji : emojiFor(nom, strate);
+    const stFinal = db ? db.strate : strate;
+
+    for(let i=0;i<Math.min(qty,30);i++){
+      inventaire.push({
+        id: Date.now()+Math.random(), nom, strate:stFinal,
+        cultivar:'', annee:'', lat:null, lng:null,
+        emoji, rusticite:getRusticite(nom),
+        journal:[], positioned:false,
+        createdAt: new Date().toISOString()
+      });
+      total++;
+    }
+    if(db) recognised++; else unknown++;
+  });
+
+  save(); updateHomeStats();
+  document.getElementById('import-result').innerHTML =
+    `✅ <strong>${total}</strong> éléments — ${recognised} reconnus, ${unknown} hors base.`;
+  toast(`📋 ${total} éléments importés`);
+}
+
+// ================================================================
+// FILTRES STRATES
+// ================================================================
+function toggleFilterBar(){
+  const bar = document.getElementById('strate-filter-bar');
+  bar.classList.toggle('open');
+}
+
+function setStrateFilter(btn, strate){
+  document.querySelectorAll('.sf-chip').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  invFilterStrate = strate;
+  inventaire.forEach(item => {
+    if(!item.marker) return;
+    const show = strate==='tous' || item.strate===strate;
+    item.marker.setOpacity(show?1:0);
+    item.marker.options.interactive = show;
+    if(item.marker._circle){
+      item.marker._circle.setStyle({opacity:show?1:0, fillOpacity:show?0.1:0});
+    }
+  });
+  document.getElementById('map-topbar-title').textContent =
+    strate==='tous' ? 'Mon terrain' : btn.textContent.trim();
+  toggleFilterBar();
+}
+
+// ================================================================
+// MÉTÉO
+// ================================================================
+async function refreshMeteo(){
+  // Utiliser la position GPS ou une position centrale si disponible
+  const pos = gpsBestPos || await getGpsOnce();
+  if(!pos) return;
+  const { latitude: lat, longitude: lng } = pos.coords;
+  const now = Date.now();
+  if(meteoData && (now-lastMeteoFetch)<3600000){ applyAlerts(); return; }
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&daily=precipitation_sum,temperature_2m_min&past_days=14&forecast_days=7&timezone=auto`;
+    const r = await fetch(url);
+    meteoData = await r.json();
+    lastMeteoFetch = now;
+    renderMeteo();
+    applyAlerts();
+    toast('🌦 Météo mise à jour');
+  } catch(e){ console.warn('Météo:',e); }
+}
+
+function getGpsOnce(){
+  return new Promise(resolve => {
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(resolve, ()=>resolve(null), {enableHighAccuracy:true,timeout:8000});
+  });
+}
+
+function renderMeteo(){
+  if(!meteoData?.daily) return;
+  const days=meteoData.daily.time||[], precip=meteoData.daily.precipitation_sum||[], tmin=meteoData.daily.temperature_2m_min||[];
+  const today=new Date().toISOString().substring(0,10);
+  const ti=Math.max(0,days.findIndex(t=>t>=today));
+  const r7 = precip.slice(Math.max(0,ti-7),ti).reduce((s,v)=>s+(v||0),0).toFixed(0);
+  const rn = precip.slice(ti,ti+7).reduce((s,v)=>s+(v||0),0).toFixed(0);
+  const tm = Math.min(...tmin.slice(ti,ti+7).filter(v=>v!=null&&!isNaN(v)));
+  document.getElementById('m-rain7').textContent = r7;
+  document.getElementById('m-rain-next').textContent = rn;
+  document.getElementById('m-tmin').textContent = isFinite(tm) ? `${tm}°C` : '—';
+  document.getElementById('meteo-row').style.display = 'flex';
+}
+
+function applyAlerts(){
+  if(!meteoData?.daily) return;
+  const days=meteoData.daily.time||[], precip=meteoData.daily.precipitation_sum||[], tmin=meteoData.daily.temperature_2m_min||[];
+  const today=new Date().toISOString().substring(0,10);
+  const ti=Math.max(0,days.findIndex(t=>t>=today));
+  const r7 = precip.slice(Math.max(0,ti-7),ti).reduce((s,v)=>s+(v||0),0);
+  const tm = Math.min(...tmin.slice(ti,ti+7).filter(v=>v!=null&&!isNaN(v)));
+  const NEEDS={arbre:20,arbuste:15,herbacee:25,couvre_sol:10,grimpante:18};
+  const waterNeedy = inventaire.filter(i=>{
+    const n=NEEDS[i.strate]||15;
+    const lw=i.lastWatered?(Date.now()-new Date(i.lastWatered).getTime())/86400000:999;
+    return r7<n*0.5&&lw>5;
+  });
+  const gelNeedy = inventaire.filter(i=>i.rusticite!=null&&isFinite(tm)&&tm<(i.rusticite+3));
+  const aw=document.getElementById('home-alert-water');
+  const ag=document.getElementById('home-alert-gel');
+  if(waterNeedy.length){aw.style.display='block';aw.textContent=`💧 ${waterNeedy.length} espèce(s) en déficit hydrique (${r7.toFixed(0)}mm ces 7j)`;}
+  else aw.style.display='none';
+  if(gelNeedy.length&&isFinite(tm)){ag.style.display='block';ag.textContent=`🌡️ Risque gel (${tm}°C) — ${gelNeedy.slice(0,3).map(i=>i.nom.split(' ')[0]).join(', ')}…`;}
+  else ag.style.display='none';
+}
+
+// ================================================================
+// UTILS
+// ================================================================
+function getRusticite(nom){
+  const n=nom.toLowerCase();
+  for(const [k,v] of Object.entries(RUSTICITE)) if(n.includes(k)) return v;
+  return null;
+}
+
+function emojiFor(nom,strate){
+  const n=nom.toLowerCase();
+  if(n.includes('pommier')||n.includes('pomme')) return '🍎';
+  if(n.includes('poirier')||n.includes('poire')) return '🍐';
+  if(n.includes('cerisier')||n.includes('cerise')) return '🍒';
+  if(n.includes('pêcher')||n.includes('pecher')||n.includes('nectarin')||n.includes('abricot')) return '🍑';
+  if(n.includes('figuier')) return '🌿';
+  if(n.includes('noyer')||n.includes('châtaignier')||n.includes('chataignier')||n.includes('noisetier')) return '🌰';
+  if(n.includes('framboisier')||n.includes('fraisier')) return '🍓';
+  if(n.includes('kiwi')||n.includes('kiwai')) return '🥝';
+  if(n.includes('prunier')||n.includes('prune')) return '🍑';
+  if(n.includes('grenadier')||n.includes('grenade')) return '🍎';
+  if(n.includes('figuier')||n.includes('figues')) return '🌿';
+  if(n.includes('mûrier')||n.includes('mûre')||n.includes('murier')||n.includes('mure')) return '🫐';
+  if(n.includes('groseille')||n.includes('cassis')) return '🍇';
+  if(n.includes('consoude')) return '🌿';
+  if(n.includes('lavande')||n.includes('thym')||n.includes('romarin')) return '💜';
+  if(strate==='grimpante') return '🍇';
+  if(strate==='couvre_sol') return '🍃';
+  if(strate==='herbacee') return '🌱';
+  return '🌿';
+}
+
+function save(){
+  try {
+    const data = inventaire.map(({marker,...r})=>r);
+    localStorage.setItem('vp_terrain', JSON.stringify(data));
+  } catch(e){ console.warn(e); }
+}
+
+function load(){
+  try {
+    const raw = localStorage.getItem('vp_terrain');
+    if(!raw) return;
+    inventaire = JSON.parse(raw);
+    // Les marqueurs seront créés quand initMap sera appelé
+  } catch(e){ inventaire=[]; }
+}
+
+function updateHomeStats(){
+  const total = inventaire.length;
+  const placed = inventaire.filter(i=>i.positioned&&i.lat).length;
+  const thisMonth = new Date(); thisMonth.setDate(1); thisMonth.setHours(0,0,0,0);
+  const recent = inventaire.filter(i=>new Date(i.createdAt)>=thisMonth).length;
+  document.getElementById('cnt-total').textContent  = total;
+  document.getElementById('cnt-placed').textContent = placed;
+  document.getElementById('cnt-today').textContent  = recent;
+}
+
+// ================================================================
+// SHEETS
+// ================================================================
+function openSheet(id){
+  document.getElementById('sheet-overlay').classList.add('open');
+  document.getElementById(id).classList.add('open');
+}
+
+function closeSheet(id){
+  document.getElementById(id).classList.remove('open');
+}
+
+function closeAllSheets(){
+  document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
+  document.getElementById('sheet-overlay').classList.remove('open');
+}
+
+// ================================================================
+// TOAST
+// ================================================================
+let toastTimer;
+function toast(msg){
+  let el = document.getElementById('toast');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.style.cssText = 'position:fixed;bottom:calc(80px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:rgba(20,31,20,0.95);border:1px solid var(--border);border-radius:12px;padding:10px 18px;font-size:14px;color:var(--accent2);z-index:9999;pointer-events:none;white-space:nowrap;backdrop-filter:blur(10px);';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.style.opacity='0'; },2800);
+}
+
+// ================================================================
+// INIT
+// ================================================================
+load();
+updateHomeStats();
+</script>
+</body>
+</html>
