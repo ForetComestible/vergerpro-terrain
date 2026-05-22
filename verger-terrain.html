@@ -575,17 +575,18 @@ function onGpsUpdate(pos){
 
   // Initialiser la carte si pas encore fait
   if(!mapInitialized) initMap(lat, lng, 19);
-  // Centrer seulement si pas en mode ajustement manuel
-  if(!gpsAdjustMode) map.setView([lat, lng], Math.max(map.getZoom(), 19));
 
-  // Point bleu position (Point 3)
-  if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); map.removeLayer(gpsBlueCircle); }
-  const blueIcon = L.divIcon({ html:'<div class="gps-blue-dot"></div>', className:'', iconAnchor:[8,8] });
-  gpsBlueMarker = L.marker([lat,lng],{icon:blueIcon,interactive:false,zIndexOffset:500}).addTo(map);
-  gpsBlueCircle = L.circle([lat,lng],{radius:acc,color:'#4a9fd4',weight:1,fillColor:'#4a9fd4',fillOpacity:0.06,interactive:false}).addTo(map);
-
-  // Mettre à jour le marqueur de drag si en mode ajustement
-  if(gpsAdjustMode && gpsDragMarker) gpsDragMarker.setLatLng([lat,lng]);
+  // En mode ajustement manuel : ne pas recentrer ni déplacer le marqueur
+  if(!gpsAdjustMode){
+    map.setView([lat, lng], Math.max(map.getZoom(), 19));
+    // Point bleu position
+    if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); map.removeLayer(gpsBlueCircle); }
+    const blueIcon = L.divIcon({ html:'<div class="gps-blue-dot"></div>', className:'', iconAnchor:[8,8] });
+    gpsBlueMarker = L.marker([lat,lng],{icon:blueIcon,interactive:false,zIndexOffset:500}).addTo(map);
+    gpsBlueCircle = L.circle([lat,lng],{radius:acc,color:'#4a9fd4',weight:1,fillColor:'#4a9fd4',fillOpacity:0.06,interactive:false}).addTo(map);
+  }
+  // En mode ajustement : mettre à jour silencieusement gpsBestPos seulement
+  // (le marqueur de drag reste où l'utilisateur l'a placé)
 
   // Précision
   const color = acc<=5?'#7ab648':acc<=10?'#d4a843':acc<=20?'#e08040':'#c05c5c';
@@ -606,22 +607,25 @@ function toggleAdjust(){
   const btn = document.getElementById('btn-adjust-gps');
 
   if(gpsAdjustMode){
-    // Créer un marqueur draggable à la position GPS actuelle
+    // Masquer le point bleu — le marqueur doré devient la référence
+    if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); gpsBlueMarker=null; }
+    if(gpsBlueCircle){ map.removeLayer(gpsBlueCircle); gpsBlueCircle=null; }
+
+    // Créer un marqueur doré draggable à la position GPS actuelle
     const lat=gpsBestPos.coords.latitude, lng=gpsBestPos.coords.longitude;
     const dragIcon = L.divIcon({
-      html:`<div style="width:24px;height:24px;border-radius:50%;background:#d4a843;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);transform:translate(-50%,-50%);cursor:grab;"></div>`,
+      html:`<div style="width:26px;height:26px;border-radius:50%;background:#d4a843;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.6);transform:translate(-50%,-50%);cursor:grab;"></div>`,
       className:'', iconAnchor:[0,0]
     });
     if(gpsDragMarker) map.removeLayer(gpsDragMarker);
     gpsDragMarker = L.marker([lat,lng],{icon:dragIcon,draggable:true,zIndexOffset:1000}).addTo(map);
     btn.textContent = '✓ Fixer ici';
     btn.classList.add('active');
-    // Arrêter le recentrage automatique
+
   } else {
     // Récupérer la position du marqueur ajusté
     if(gpsDragMarker){
       const ll = gpsDragMarker.getLatLng();
-      // Simuler une position ajustée
       gpsBestPos._adjustedLat = ll.lat;
       gpsBestPos._adjustedLng = ll.lng;
       map.removeLayer(gpsDragMarker); gpsDragMarker=null;
