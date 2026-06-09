@@ -275,8 +275,14 @@
     </div>
   </div>
 
-  <!-- Bouton + flottant -->
-  <button id="btn-add-float" onclick="startGps()">＋</button>
+  <!-- Bouton géolocalisation flottant -->
+  <button id="btn-add-float" onclick="startGps()">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+      <circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/>
+    </svg>
+  </button>
 </div>
 
 <!-- ══ BOTTOM SHEETS ══ -->
@@ -773,20 +779,21 @@ function createMarker(item){
     fillColor: color, fillOpacity: 0.10, interactive: false
   }).addTo(map);
 
+  // Point coloré + nom en étiquette
+  const nomCourt = item.nom.length > 15 ? item.nom.substring(0,14)+'…' : item.nom;
+  const recentRing = recent ? 'outline:2px solid #a8d878;outline-offset:2px;' : '';
   const icon = L.divIcon({
-    html: `<div style="transform:translateX(-50%);text-align:center;pointer-events:none;">
-      <div style="background:${color};color:#fff;font-size:10px;font-weight:600;padding:3px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.5);max-width:80px;overflow:hidden;text-overflow:ellipsis;">
-        ${item.emoji} ${item.nom.substring(0,12)}
-      </div>${recent?'<div style="font-size:8px;margin-top:1px;">🟢</div>':''}
+    html: `<div style="display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);pointer-events:none;">
+      <div style="width:11px;height:11px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.9);box-shadow:0 1px 5px rgba(0,0,0,.7);${recentRing}"></div>
+      <div style="background:rgba(8,14,8,0.80);color:#d8e8c8;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;white-space:nowrap;margin-top:3px;backdrop-filter:blur(4px);letter-spacing:0.01em;">${nomCourt}</div>
     </div>`,
     className:'', iconAnchor:[0,0]
   });
 
-  const m = L.marker([item.lat, item.lng], {icon})
+  const m = L.marker([item.lat, item.lng], {icon, zIndexOffset:100})
     .addTo(map)
     .on('click', () => showFiche(item.id));
 
-  // Stocker le cercle dans le marker pour le filtrage
   m._circle = circle;
 
   if(invFilterStrate!=='tous' && item.strate!==invFilterStrate){
