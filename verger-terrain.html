@@ -295,6 +295,7 @@
       <button class="btn-cancel-gps" onclick="cancelGps()">✕</button>
     </div>
     <div class="gps-bar-wrap"><div class="gps-bar-fill" id="gps-bar"></div></div>
+    <div id="gps-hint" style="font-size:11px;color:var(--muted);text-align:center;">Validez le GPS ou touchez la carte pour pointer</div>
     <div class="gps-btns">
       <button class="btn-validate" id="btn-validate-gps" onclick="validateGps()" disabled>🌱 Ajouter ici</button>
       <button class="btn-adjust" id="btn-adjust-gps" onclick="toggleAdjust()" disabled>✋ Ajuster</button>
@@ -571,6 +572,27 @@ function initMap(lat, lng, zoom){
   inventaire.forEach(item => {
     if(item.lat && item.lng) item.marker = createMarker(item);
   });
+
+  // Tap sur la carte PENDANT le flux GPS : pose le point doré à cet endroit.
+  // Le tap ne valide jamais — le bouton "Ajouter ici" confirme.
+  map.on('click', e => {
+    if(gpsWatchId === null) return; // pas de flux en cours
+    setAdjustPoint(e.latlng.lat, e.latlng.lng);
+    enableValidateBtn();
+  });
+
+  // Appui long (contextmenu sur mobile) HORS flux GPS : créer un élément ici
+  map.on('contextmenu', e => {
+    if(gpsWatchId !== null) return; // flux GPS en cours : le tap simple gère déjà
+    openIdentifySheet(e.latlng.lat, e.latlng.lng, null);
+  });
+}
+
+function enableValidateBtn(){
+  const btnV = document.getElementById('btn-validate-gps');
+  const btnA = document.getElementById('btn-adjust-gps');
+  if(btnV){ btnV.disabled = false; btnV.classList.add('ready'); }
+  if(btnA){ btnA.disabled = false; btnA.classList.add('ready'); }
 }
 
 // ================================================================
@@ -610,6 +632,8 @@ function startGps(){
   hidePosNextOverlay();
   const gpsLabel = document.getElementById('gps-label');
   if(gpsLabel) gpsLabel.textContent = 'GPS en cours…';
+  const gpsHint = document.getElementById('gps-hint');
+  if(gpsHint) gpsHint.textContent = 'Validez le GPS ou touchez la carte pour pointer';
   // Nettoyer marqueur de drag précédent
   if(gpsDragMarker){ map.removeLayer(gpsDragMarker); gpsDragMarker=null; }
   const overlay = document.getElementById('gps-overlay');
@@ -617,7 +641,7 @@ function startGps(){
   const btnV = document.getElementById('btn-validate-gps');
   const btnA = document.getElementById('btn-adjust-gps');
   btnV.disabled = true; btnV.classList.remove('ready');
-  btnA.disabled = true; btnA.classList.remove('ready','active');
+  btnA.disabled = true; btnA.classList.remove('ready','active'); btnA.textContent = '✋ Ajuster';
   const btnL = document.getElementById('btn-locate-only');
   if(btnL) btnL.disabled = true;
   document.getElementById('gps-acc-display').textContent = '—';
@@ -665,52 +689,60 @@ function onGpsUpdate(pos){
   if(btnL) btnL.disabled=false;
 }
 
-function toggleAdjust(){
-  if(!gpsBestPos) return;
-  gpsAdjustMode = !gpsAdjustMode;
-  const btn = document.getElementById('btn-adjust-gps');
-  const lbl = document.getElementById('gps-label');
+function setAdjustPoint(lat, lng){
+  // Pose (ou déplace) le point doré : il devient LA référence de position
+  gpsAdjustMode = true;
+  // Masquer le point bleu GPS
+  if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); gpsBlueMarker=null; }
+  if(gpsBlueCircle){ map.removeLayer(gpsBlueCircle); gpsBlueCircle=null; }
 
-  if(gpsAdjustMode){
-    // Masquer le point bleu — le marqueur doré devient LA référence
-    if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); gpsBlueMarker=null; }
-    if(gpsBlueCircle){ map.removeLayer(gpsBlueCircle); gpsBlueCircle=null; }
-
-    // Marqueur doré draggable : sa position sera lue au moment de "Ajouter ici"
-    const lat=gpsBestPos.coords.latitude, lng=gpsBestPos.coords.longitude;
+  if(gpsDragMarker){
+    gpsDragMarker.setLatLng([lat, lng]);
+  } else {
     const dragIcon = L.divIcon({
       html:`<div style="width:26px;height:26px;border-radius:50%;background:#d4a843;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.6);transform:translate(-50%,-50%);cursor:grab;"></div>`,
       className:'', iconAnchor:[0,0]
     });
-    if(gpsDragMarker) map.removeLayer(gpsDragMarker);
     gpsDragMarker = L.marker([lat,lng],{icon:dragIcon,draggable:true,zIndexOffset:1000}).addTo(map);
-    btn.textContent = '🛰 Suivre le GPS';
-    btn.classList.add('active');
-    if(lbl) lbl.textContent = '✋ Déplacez le point doré';
+  }
+  const btn = document.getElementById('btn-adjust-gps');
+  const hint = document.getElementById('gps-hint');
+  if(btn){ btn.textContent = '🛰 Suivre le GPS'; btn.classList.add('active'); }
+  if(hint) hint.textContent = 'Point posé — déplacez-le ou retouchez la carte';
+}
 
+function exitAdjustMode(){
+  gpsAdjustMode = false;
+  if(gpsDragMarker){ map.removeLayer(gpsDragMarker); gpsDragMarker=null; }
+  const btn = document.getElementById('btn-adjust-gps');
+  const hint = document.getElementById('gps-hint');
+  if(btn){ btn.textContent = '✋ Ajuster'; btn.classList.remove('active'); }
+  if(hint) hint.textContent = 'Validez le GPS ou touchez la carte pour pointer';
+}
+
+function toggleAdjust(){
+  if(!gpsBestPos && !gpsAdjustMode) return;
+  if(gpsAdjustMode){
+    exitAdjustMode();
   } else {
-    // Retour au mode GPS : abandonner l'ajustement
-    if(gpsDragMarker){ map.removeLayer(gpsDragMarker); gpsDragMarker=null; }
-    btn.textContent = '✋ Ajuster';
-    btn.classList.remove('active');
-    if(lbl) lbl.textContent = positioningItem
-      ? `📍 ${positioningItem.nom}${positioningItem.cultivar ? ' · '+positioningItem.cultivar : ''}`
-      : 'GPS en cours…';
+    setAdjustPoint(gpsBestPos.coords.latitude, gpsBestPos.coords.longitude);
   }
 }
 
 function validateGps(){
-  if(!gpsBestPos) return;
-  // Position de référence : le marqueur doré si mode ajustement, sinon le GPS
-  let lat, lng;
+  // Position de référence : le marqueur doré si mode pointage/ajustement, sinon le GPS
+  let lat, lng, acc;
   if(gpsAdjustMode && gpsDragMarker){
     const ll = gpsDragMarker.getLatLng();
     lat = ll.lat; lng = ll.lng;
-  } else {
+    acc = null; // position pointée manuellement : pas de précision GPS à afficher
+  } else if(gpsBestPos){
     lat = gpsBestPos.coords.latitude;
     lng = gpsBestPos.coords.longitude;
+    acc = Math.round(gpsBestPos.coords.accuracy);
+  } else {
+    return; // ni point doré ni fix GPS
   }
-  const acc = Math.round(gpsBestPos.coords.accuracy);
   stopGpsWatch();
   document.getElementById('gps-overlay').classList.remove('open');
   // Nettoyer les marqueurs temporaires
