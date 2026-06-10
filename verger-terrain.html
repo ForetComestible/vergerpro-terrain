@@ -76,7 +76,7 @@
     border-bottom: 1px solid var(--border);
   }
   .map-back { background: none; border: none; color: var(--accent2); font-size: 22px; cursor: pointer; padding: 4px; line-height: 1; }
-  .map-title { flex: 1; font-size: 15px; font-weight: 500; color: var(--text); }
+  .map-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 500; color: var(--text); }
   .map-filter-btn { background: var(--panel2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
   .map-filter-btn.active { border-color: var(--accent); color: var(--accent2); }
 
@@ -226,6 +226,10 @@
     <div class="stat-card"><div class="stat-num" id="cnt-today">0</div><div class="stat-lbl">ce mois</div></div>
   </div>
 
+  <div id="home-unpos-strip" onclick="goToMap(); setTimeout(openUnposSheet, 350);" style="display:none;width:100%;margin:-16px 0 16px;background:rgba(212,168,67,0.1);border:1px solid var(--gold);border-radius:12px;padding:11px 14px;font-size:13px;color:var(--gold);cursor:pointer;text-align:center;">
+    📋 <span id="home-unpos-count">0</span> éléments à positionner sur la carte →
+  </div>
+
   <div id="home-alert-water" class="alert-strip alert-water"></div>
   <div id="home-alert-gel"   class="alert-strip alert-gel"></div>
 
@@ -256,7 +260,7 @@
     <span class="map-title" id="map-topbar-title">Mon terrain</span>
     <button class="map-filter-btn" id="btn-unpos" onclick="openUnposSheet()" style="display:none;border-color:var(--gold);color:var(--gold);">📋 <span id="unpos-count">0</span></button>
     <button class="map-filter-btn" onclick="toggleAddressSearch()" style="padding:5px 10px;">🔍</button>
-    <button class="map-filter-btn" id="filter-toggle-btn" onclick="toggleFilterBar()">🌳 Strates</button>
+    <button class="map-filter-btn" id="filter-toggle-btn" onclick="toggleFilterBar()" style="padding:5px 10px;">🌳</button>
   </div>
 
   <!-- Recherche d'adresse -->
@@ -665,13 +669,14 @@ function toggleAdjust(){
   if(!gpsBestPos) return;
   gpsAdjustMode = !gpsAdjustMode;
   const btn = document.getElementById('btn-adjust-gps');
+  const lbl = document.getElementById('gps-label');
 
   if(gpsAdjustMode){
-    // Masquer le point bleu — le marqueur doré devient la référence
+    // Masquer le point bleu — le marqueur doré devient LA référence
     if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); gpsBlueMarker=null; }
     if(gpsBlueCircle){ map.removeLayer(gpsBlueCircle); gpsBlueCircle=null; }
 
-    // Créer un marqueur doré draggable à la position GPS actuelle
+    // Marqueur doré draggable : sa position sera lue au moment de "Ajouter ici"
     const lat=gpsBestPos.coords.latitude, lng=gpsBestPos.coords.longitude;
     const dragIcon = L.divIcon({
       html:`<div style="width:26px;height:26px;border-radius:50%;background:#d4a843;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.6);transform:translate(-50%,-50%);cursor:grab;"></div>`,
@@ -679,36 +684,42 @@ function toggleAdjust(){
     });
     if(gpsDragMarker) map.removeLayer(gpsDragMarker);
     gpsDragMarker = L.marker([lat,lng],{icon:dragIcon,draggable:true,zIndexOffset:1000}).addTo(map);
-    btn.textContent = '✓ Fixer ici';
+    btn.textContent = '🛰 Suivre le GPS';
     btn.classList.add('active');
+    if(lbl) lbl.textContent = '✋ Déplacez le point doré';
 
   } else {
-    // Récupérer la position du marqueur ajusté
-    if(gpsDragMarker){
-      const ll = gpsDragMarker.getLatLng();
-      gpsBestPos._adjustedLat = ll.lat;
-      gpsBestPos._adjustedLng = ll.lng;
-      map.removeLayer(gpsDragMarker); gpsDragMarker=null;
-    }
+    // Retour au mode GPS : abandonner l'ajustement
+    if(gpsDragMarker){ map.removeLayer(gpsDragMarker); gpsDragMarker=null; }
     btn.textContent = '✋ Ajuster';
     btn.classList.remove('active');
-    gpsAdjustMode = false;
+    if(lbl) lbl.textContent = positioningItem
+      ? `📍 ${positioningItem.nom}${positioningItem.cultivar ? ' · '+positioningItem.cultivar : ''}`
+      : 'GPS en cours…';
   }
 }
 
 function validateGps(){
   if(!gpsBestPos) return;
+  // Position de référence : le marqueur doré si mode ajustement, sinon le GPS
+  let lat, lng;
+  if(gpsAdjustMode && gpsDragMarker){
+    const ll = gpsDragMarker.getLatLng();
+    lat = ll.lat; lng = ll.lng;
+  } else {
+    lat = gpsBestPos.coords.latitude;
+    lng = gpsBestPos.coords.longitude;
+  }
+  const acc = Math.round(gpsBestPos.coords.accuracy);
   stopGpsWatch();
   document.getElementById('gps-overlay').classList.remove('open');
-  // Utiliser la position ajustée si disponible
-  const lat = gpsBestPos._adjustedLat ?? gpsBestPos.coords.latitude;
-  const lng = gpsBestPos._adjustedLng ?? gpsBestPos.coords.longitude;
-  const acc = Math.round(gpsBestPos.coords.accuracy);
-  // Nettoyer le point bleu
+  // Nettoyer les marqueurs temporaires
   if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); gpsBlueMarker=null; }
   if(gpsBlueCircle){ map.removeLayer(gpsBlueCircle); gpsBlueCircle=null; }
   if(gpsDragMarker){ map.removeLayer(gpsDragMarker); gpsDragMarker=null; }
   gpsAdjustMode = false;
+  const btnA = document.getElementById('btn-adjust-gps');
+  if(btnA){ btnA.textContent = '✋ Ajuster'; btnA.classList.remove('active'); }
 
   // Mode positionnement depuis la liste : attribuer directement, pas de formulaire
   if(positioningItem){
@@ -734,7 +745,7 @@ function updateUnposBadge(){
   const btn = document.getElementById('btn-unpos');
   if(!btn) return;
   btn.style.display = n > 0 ? 'inline-block' : 'none';
-  document.getElementById('unpos-count').textContent = n;
+  document.getElementById('unpos-count').textContent = n > 999 ? '999+' : n;
 }
 
 function openUnposSheet(){
@@ -757,6 +768,8 @@ function renderUnposList(){
 
   const keys = Object.keys(groups).sort((a,b) => groups[a].item.nom.localeCompare(groups[b].item.nom, 'fr'));
   const listEl = document.getElementById('unpos-list');
+  // Stocker les clés pour les onclick (robuste apostrophes/guillemets)
+  listEl._keys = keys;
 
   if(!keys.length){
     listEl.innerHTML = '<p style="font-size:13px;color:var(--muted);font-style:italic;padding:10px 0;">' +
@@ -764,10 +777,11 @@ function renderUnposList(){
     return;
   }
 
-  listEl.innerHTML = keys.map(k => {
+  const totalUnpos = getUnpositioned().length;
+  listEl.innerHTML = keys.map((k, idx) => {
     const g = groups[k];
     const color = STRATE_COLORS[g.item.strate] || '#888';
-    return `<div onclick="startPositioning('${k.replace(/'/g,"\\'")}')"
+    return `<div data-idx="${idx}" onclick="startPositioningIdx(this)"
       style="display:flex;align-items:center;gap:10px;padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
       <div style="flex:1;min-width:0;">
@@ -777,7 +791,26 @@ function renderUnposList(){
       ${g.count > 1 ? `<span style="font-size:12px;color:var(--gold);font-weight:600;flex-shrink:0;">×${g.count}</span>` : ''}
       <span style="color:var(--muted);flex-shrink:0;">›</span>
     </div>`;
-  }).join('');
+  }).join('') +
+  `<button onclick="clearUnpositioned()" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;background:transparent;color:var(--danger);border:1px solid var(--danger);font-size:13px;cursor:pointer;font-family:inherit;">🗑 Vider la liste (${totalUnpos} non positionnés)</button>`;
+}
+
+function startPositioningIdx(el){
+  const listEl = document.getElementById('unpos-list');
+  const key = listEl._keys?.[parseInt(el.dataset.idx)];
+  if(key != null) startPositioning(key);
+}
+
+function clearUnpositioned(){
+  const unpos = getUnpositioned();
+  if(!unpos.length) return;
+  if(!confirm(`Supprimer les ${unpos.length} éléments NON POSITIONNÉS ?\n\nLes éléments déjà placés sur la carte sont conservés.\n\nUtile pour corriger un double import : videz puis réimportez votre liste.`)) return;
+  inventaire = inventaire.filter(i => i.positioned && i.lat);
+  save();
+  updateHomeStats();
+  updateUnposBadge();
+  renderUnposList();
+  toast(`🗑 ${unpos.length} éléments supprimés`);
 }
 
 function startPositioning(key){
@@ -904,14 +937,30 @@ function setupAC(){
     debounce = setTimeout(() => {
       const q = input.value.trim().toLowerCase();
       if(q.length < 2){ list.style.display='none'; return; }
-      const matches = ARBRES_DB.filter(a => a.nom.toLowerCase().includes(q)).slice(0,7);
+
+      // 1. Base de données des espèces
+      const dbMatches = ARBRES_DB.filter(a => a.nom.toLowerCase().includes(q)).slice(0,5)
+        .map(a => ({nom:a.nom, strate:a.strate, emoji:a.emoji, source:''}));
+
+      // 2. Espèces de l'inventaire absentes de la base (votre liste importée)
+      const dbNoms = new Set(dbMatches.map(m => m.nom.toLowerCase()));
+      const seen = new Set();
+      const invMatches = [];
+      inventaire.forEach(i => {
+        const key = i.nom.toLowerCase();
+        if(key.includes(q) && !dbNoms.has(key) && !seen.has(key)){
+          seen.add(key);
+          invMatches.push({nom:i.nom, strate:i.strate, emoji:i.emoji||'🌿', source:'votre liste'});
+        }
+      });
+
+      const matches = [...dbMatches, ...invMatches.slice(0, 7 - dbMatches.length)];
       if(!matches.length){ list.style.display='none'; return; }
-      // Stocker les resultats pour eviter les problemes dans onclick
       list._matches = matches;
       list.innerHTML = matches.map((a,i) =>
         `<div class="ac-item" data-idx="${i}" onclick="pickAC(this)">
           <span style="font-size:20px">${a.emoji}</span>
-          <div><div>${esc(a.nom)}</div><div class="ac-strate">${a.strate}</div></div>
+          <div><div>${esc(a.nom)}</div><div class="ac-strate">${a.strate}${a.source ? ' · 📋 '+a.source : ''}</div></div>
         </div>`).join('');
       list.style.display = 'block';
     }, 250);
@@ -1144,6 +1193,10 @@ function openImportSheet(){ openSheet('sheet-import'); }
 function processImport(){
   const raw = document.getElementById('import-ta').value.trim();
   if(!raw) return;
+  // Garde-fou double import
+  if(inventaire.length > 0){
+    if(!confirm(`Vous avez déjà ${inventaire.length} éléments dans l'inventaire.\n\nAjouter cette liste EN PLUS ? (les doublons ne sont pas détectés)\n\nPour repartir de zéro, annulez et utilisez "Vider la liste" dans 📋 À positionner.`)) return;
+  }
   let recognised=0, unknown=0, total=0;
 
   // ── Pré-traitement : fusionner les cellules multilignes quotées ──
@@ -1222,7 +1275,8 @@ function processImport(){
 
   save(); updateHomeStats(); updateUnposBadge();
   document.getElementById('import-result').innerHTML =
-    `✅ <strong>${total}</strong> éléments — ${recognised} reconnus, ${unknown} hors base.`;
+    `✅ <strong>${total}</strong> éléments — ${recognised} reconnus, ${unknown} hors base.<br>
+    <span style="color:var(--gold);">→ Retrouvez-les via le bouton 📋 sur la carte pour les positionner.</span>`;
   toast(`📋 ${total} éléments importés`);
 }
 
@@ -1473,6 +1527,13 @@ function updateHomeStats(){
   document.getElementById('cnt-total').textContent  = total;
   document.getElementById('cnt-placed').textContent = placed;
   document.getElementById('cnt-today').textContent  = recent;
+  // Bandeau "à positionner" sur l'accueil
+  const unposN = total - placed;
+  const strip = document.getElementById('home-unpos-strip');
+  if(strip){
+    strip.style.display = unposN > 0 ? 'block' : 'none';
+    document.getElementById('home-unpos-count').textContent = unposN;
+  }
   // Rappel sauvegarde
   const lastBackup = localStorage.getItem('vp_last_backup');
   const reminder = document.getElementById('backup-reminder');
