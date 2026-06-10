@@ -254,6 +254,7 @@
   <div class="map-topbar">
     <button class="map-back" onclick="goHome()">‹</button>
     <span class="map-title" id="map-topbar-title">Mon terrain</span>
+    <button class="map-filter-btn" id="btn-unpos" onclick="openUnposSheet()" style="display:none;border-color:var(--gold);color:var(--gold);">📋 <span id="unpos-count">0</span></button>
     <button class="map-filter-btn" onclick="toggleAddressSearch()" style="padding:5px 10px;">🔍</button>
     <button class="map-filter-btn" id="filter-toggle-btn" onclick="toggleFilterBar()">🌳 Strates</button>
   </div>
@@ -285,7 +286,7 @@
   <div id="gps-overlay">
     <div class="gps-row">
       <div class="gps-dot"></div>
-      <span class="gps-label">GPS en cours…</span>
+      <span class="gps-label" id="gps-label">GPS en cours…</span>
       <span class="gps-accuracy-inline" id="gps-acc-display">—</span>
       <button class="btn-cancel-gps" onclick="cancelGps()">✕</button>
     </div>
@@ -374,6 +375,29 @@
     <label class="form-label">Note (optionnel)</label>
     <textarea class="import-textarea" id="journal-note" placeholder="Observations, quantité récoltée…" style="height:90px;margin-bottom:14px;"></textarea>
     <button class="btn-sheet-primary" onclick="saveJournalEntry()">Enregistrer</button>
+  </div>
+</div>
+
+<!-- Sheet : Éléments à positionner -->
+<div class="sheet" id="sheet-unpos">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">📋 À positionner</span>
+    <button class="sheet-close" onclick="closeAllSheets()">×</button>
+  </div>
+  <div class="sheet-body">
+    <input type="text" id="unpos-search" class="form-input" placeholder="Rechercher…" autocomplete="off" oninput="renderUnposList()">
+    <div id="unpos-list"></div>
+  </div>
+</div>
+
+<!-- Overlay post-positionnement : Suivant / Liste / Terminé -->
+<div id="pos-next-overlay" style="display:none;position:absolute;bottom:calc(88px + var(--safe));left:12px;right:12px;z-index:1500;background:rgba(14,22,14,0.95);backdrop-filter:blur(16px);border:1px solid var(--accent);border-radius:16px;padding:14px;flex-direction:column;gap:10px;">
+  <div id="pos-next-msg" style="font-size:13px;color:var(--accent2);text-align:center;"></div>
+  <div style="display:flex;gap:8px;">
+    <button id="pos-next-btn" onclick="positionNext()" style="flex:2;padding:12px;border-radius:12px;background:var(--accent);color:#0f1a0f;border:none;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">→ Suivant</button>
+    <button onclick="backToUnposList()" style="flex:1;padding:12px;border-radius:12px;background:var(--panel2);color:var(--text);border:1px solid var(--border);font-size:13px;cursor:pointer;font-family:inherit;">📋 Liste</button>
+    <button onclick="endPositioning()" style="padding:12px 14px;border-radius:12px;background:transparent;color:var(--muted);border:1px solid var(--border);font-size:13px;cursor:pointer;font-family:inherit;">✕</button>
   </div>
 </div>
 
@@ -551,6 +575,7 @@ function initMap(lat, lng, zoom){
 function goToMap(){
   document.getElementById('screen-home').classList.add('hidden-left');
   document.getElementById('screen-map').classList.remove('hidden-right');
+  updateUnposBadge();
 
   if(!mapInitialized){
     const bc = calcBarycentre();
@@ -578,6 +603,9 @@ function startGps(){
   if(!navigator.geolocation){ alert('GPS non disponible'); return; }
   gpsBestPos = null;
   gpsAdjustMode = false;
+  hidePosNextOverlay();
+  const gpsLabel = document.getElementById('gps-label');
+  if(gpsLabel) gpsLabel.textContent = 'GPS en cours…';
   // Nettoyer marqueur de drag précédent
   if(gpsDragMarker){ map.removeLayer(gpsDragMarker); gpsDragMarker=null; }
   const overlay = document.getElementById('gps-overlay');
@@ -681,7 +709,140 @@ function validateGps(){
   if(gpsBlueCircle){ map.removeLayer(gpsBlueCircle); gpsBlueCircle=null; }
   if(gpsDragMarker){ map.removeLayer(gpsDragMarker); gpsDragMarker=null; }
   gpsAdjustMode = false;
+
+  // Mode positionnement depuis la liste : attribuer directement, pas de formulaire
+  if(positioningItem){
+    finishPositioning(lat, lng);
+    return;
+  }
   openIdentifySheet(lat, lng, acc);
+}
+
+// ================================================================
+// POSITIONNEMENT DEPUIS LA LISTE (éléments importés sans position)
+// ================================================================
+let positioningItem = null; // élément en cours de positionnement
+
+function groupKey(item){ return item.nom + '||' + (item.cultivar||''); }
+
+function getUnpositioned(){
+  return inventaire.filter(i => !i.positioned || !i.lat);
+}
+
+function updateUnposBadge(){
+  const n = getUnpositioned().length;
+  const btn = document.getElementById('btn-unpos');
+  if(!btn) return;
+  btn.style.display = n > 0 ? 'inline-block' : 'none';
+  document.getElementById('unpos-count').textContent = n;
+}
+
+function openUnposSheet(){
+  document.getElementById('unpos-search').value = '';
+  renderUnposList();
+  openSheet('sheet-unpos');
+}
+
+function renderUnposList(){
+  const q = (document.getElementById('unpos-search').value || '').trim().toLowerCase();
+  const unpos = getUnpositioned().filter(i => !q || i.nom.toLowerCase().includes(q) || (i.cultivar||'').toLowerCase().includes(q));
+
+  // Regrouper par espèce + cultivar
+  const groups = {};
+  unpos.forEach(i => {
+    const k = groupKey(i);
+    if(!groups[k]) groups[k] = { item: i, count: 0 };
+    groups[k].count++;
+  });
+
+  const keys = Object.keys(groups).sort((a,b) => groups[a].item.nom.localeCompare(groups[b].item.nom, 'fr'));
+  const listEl = document.getElementById('unpos-list');
+
+  if(!keys.length){
+    listEl.innerHTML = '<p style="font-size:13px;color:var(--muted);font-style:italic;padding:10px 0;">' +
+      (q ? 'Aucun résultat' : 'Tous les éléments sont positionnés 🎉') + '</p>';
+    return;
+  }
+
+  listEl.innerHTML = keys.map(k => {
+    const g = groups[k];
+    const color = STRATE_COLORS[g.item.strate] || '#888';
+    return `<div onclick="startPositioning('${k.replace(/'/g,"\\'")}')"
+      style="display:flex;align-items:center;gap:10px;padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;color:var(--text);">${esc(g.item.nom)}</div>
+        ${g.item.cultivar ? `<div style="font-size:11px;color:var(--muted);">${esc(g.item.cultivar)}</div>` : ''}
+      </div>
+      ${g.count > 1 ? `<span style="font-size:12px;color:var(--gold);font-weight:600;flex-shrink:0;">×${g.count}</span>` : ''}
+      <span style="color:var(--muted);flex-shrink:0;">›</span>
+    </div>`;
+  }).join('');
+}
+
+function startPositioning(key){
+  const candidates = getUnpositioned().filter(i => groupKey(i) === key);
+  if(!candidates.length) return;
+  positioningItem = candidates[0];
+  closeAllSheets();
+  hidePosNextOverlay();
+  // Lancer le GPS avec le bandeau de l'élément en cours
+  startGps();
+  const label = document.getElementById('gps-label');
+  if(label) label.textContent = `📍 ${positioningItem.nom}${positioningItem.cultivar ? ' · '+positioningItem.cultivar : ''}`;
+}
+
+function finishPositioning(lat, lng){
+  if(!positioningItem) return;
+  positioningItem.lat = lat;
+  positioningItem.lng = lng;
+  positioningItem.positioned = true;
+  if(mapInitialized) positioningItem.marker = createMarker(positioningItem);
+  save();
+  updateUnposBadge();
+  updateHomeStats();
+
+  // Proposer le choix : suivant du même groupe / liste / terminé
+  const key = groupKey(positioningItem);
+  const remaining = getUnpositioned().filter(i => groupKey(i) === key).length;
+  const totalRemaining = getUnpositioned().length;
+  const nomDone = positioningItem.nom;
+  positioningItem = null;
+
+  const overlay = document.getElementById('pos-next-overlay');
+  const msg = document.getElementById('pos-next-msg');
+  const nextBtn = document.getElementById('pos-next-btn');
+
+  msg.textContent = `✅ ${nomDone} positionné`;
+  if(remaining > 0){
+    nextBtn.style.display = 'block';
+    nextBtn.textContent = `→ Suivant (${remaining} restant${remaining>1?'s':''})`;
+    nextBtn.dataset.key = key;
+  } else {
+    nextBtn.style.display = 'none';
+    if(totalRemaining === 0) msg.textContent += ' — tout est placé 🎉';
+  }
+  overlay.style.display = 'flex';
+}
+
+function positionNext(){
+  const key = document.getElementById('pos-next-btn').dataset.key;
+  hidePosNextOverlay();
+  if(key) startPositioning(key);
+}
+
+function backToUnposList(){
+  hidePosNextOverlay();
+  openUnposSheet();
+}
+
+function endPositioning(){
+  hidePosNextOverlay();
+  positioningItem = null;
+}
+
+function hidePosNextOverlay(){
+  document.getElementById('pos-next-overlay').style.display = 'none';
 }
 
 function locateOnly(){
@@ -701,6 +862,7 @@ function locateOnly(){
 
 function cancelGps(){
   stopGpsWatch();
+  positioningItem = null;
   document.getElementById('gps-overlay').classList.remove('open');
   if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); gpsBlueMarker=null; }
   if(gpsBlueCircle){ map.removeLayer(gpsBlueCircle); gpsBlueCircle=null; }
@@ -970,7 +1132,7 @@ function deleteElement(id){
   const item = inventaire.find(i=>i.id===id);
   if(item?.marker){ map.removeLayer(item.marker); if(item.marker._circle) map.removeLayer(item.marker._circle); }
   inventaire = inventaire.filter(i=>i.id!==id);
-  save(); updateHomeStats(); closeAllSheets();
+  save(); updateHomeStats(); updateUnposBadge(); closeAllSheets();
   toast('🗑 Supprimé');
 }
 
@@ -1058,7 +1220,7 @@ function processImport(){
     if(db) recognised++; else unknown++;
   });
 
-  save(); updateHomeStats();
+  save(); updateHomeStats(); updateUnposBadge();
   document.getElementById('import-result').innerHTML =
     `✅ <strong>${total}</strong> éléments — ${recognised} reconnus, ${unknown} hors base.`;
   toast(`📋 ${total} éléments importés`);
@@ -1370,6 +1532,7 @@ function restoreData(input){
         });
       }
       updateHomeStats();
+      updateUnposBadge();
       toast(`♻️ ${inventaire.length} éléments restaurés`);
     } catch(e){
       alert('Fichier invalide — vérifiez qu\'il s\'agit bien d\'un export verger-terrain');
