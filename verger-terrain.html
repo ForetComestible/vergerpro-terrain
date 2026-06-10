@@ -778,7 +778,12 @@ function renderUnposList(){
   }
 
   const totalUnpos = getUnpositioned().length;
-  listEl.innerHTML = keys.map((k, idx) => {
+  listEl.innerHTML =
+  `<div style="display:flex;align-items:center;justify-content:space-between;padding:2px 0 10px;border-bottom:1px solid var(--border);margin-bottom:4px;">
+    <span style="font-size:12px;color:var(--muted);">${totalUnpos} élément${totalUnpos>1?'s':''} · ${keys.length} espèce${keys.length>1?'s':''}</span>
+    <button onclick="clearUnpositioned()" style="background:transparent;color:var(--danger);border:1px solid var(--danger);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;">🗑 Tout vider</button>
+  </div>` +
+  keys.map((k, idx) => {
     const g = groups[k];
     const color = STRATE_COLORS[g.item.strate] || '#888';
     return `<div data-idx="${idx}" onclick="startPositioningIdx(this)"
@@ -791,8 +796,7 @@ function renderUnposList(){
       ${g.count > 1 ? `<span style="font-size:12px;color:var(--gold);font-weight:600;flex-shrink:0;">×${g.count}</span>` : ''}
       <span style="color:var(--muted);flex-shrink:0;">›</span>
     </div>`;
-  }).join('') +
-  `<button onclick="clearUnpositioned()" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;background:transparent;color:var(--danger);border:1px solid var(--danger);font-size:13px;cursor:pointer;font-family:inherit;">🗑 Vider la liste (${totalUnpos} non positionnés)</button>`;
+  }).join('');
 }
 
 function startPositioningIdx(el){
