@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f1a0f">
+<link rel="manifest" href="manifest.json">
 <title>Mon Terrain 🌿</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -236,7 +237,13 @@
 
   <button class="btn-main btn-go" onclick="goToMap()">Aller sur le terrain →</button>
   <button class="btn-main btn-secondary-home" onclick="openImportSheet()">📋 Importer ma liste</button>
-  <button class="btn-import-home" onclick="refreshMeteo()">🌦 Actualiser météo</button>
+  <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
+    <button class="btn-import-home" style="flex:1;margin-top:0;" onclick="refreshMeteo()">🌦 Météo</button>
+    <button class="btn-import-home" style="flex:1;margin-top:0;" onclick="exportData()">💾 Sauvegarder</button>
+    <button class="btn-import-home" style="flex:1;margin-top:0;" onclick="document.getElementById('restore-input').click()">♻️ Restaurer</button>
+  </div>
+  <input type="file" id="restore-input" accept=".json" style="display:none;" onchange="restoreData(this)">
+  <div id="backup-reminder" style="display:none;width:100%;margin-top:10px;font-size:12px;color:var(--gold);text-align:center;">⚠️ Dernière sauvegarde il y a plus de 30 jours</div>
 </div>
 
 <!-- ══ ÉCRAN 2 : CARTE ══ -->
@@ -247,7 +254,21 @@
   <div class="map-topbar">
     <button class="map-back" onclick="goHome()">‹</button>
     <span class="map-title" id="map-topbar-title">Mon terrain</span>
+    <button class="map-filter-btn" onclick="toggleAddressSearch()" style="padding:5px 10px;">🔍</button>
     <button class="map-filter-btn" id="filter-toggle-btn" onclick="toggleFilterBar()">🌳 Strates</button>
+  </div>
+
+  <!-- Recherche d'adresse -->
+  <div id="addr-search" style="display:none;position:absolute;top:64px;left:12px;right:12px;z-index:1600;">
+    <div style="position:relative;">
+      <input type="text" id="addr-input" placeholder="Rechercher une adresse…" autocomplete="off"
+        style="width:100%;background:rgba(14,22,14,0.95);border:1px solid var(--accent);border-radius:12px;padding:13px 42px 13px 14px;color:var(--text);font-size:15px;font-family:inherit;backdrop-filter:blur(12px);">
+      <button onclick="closeAddressSearch()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);font-size:18px;padding:6px;cursor:pointer;">✕</button>
+    </div>
+    <div id="addr-results" style="margin-top:6px;background:rgba(14,22,14,0.95);border:1px solid var(--border);border-radius:12px;overflow:hidden;display:none;backdrop-filter:blur(12px);"></div>
+    <div id="addr-back-home" style="display:none;margin-top:6px;">
+      <button onclick="backToTerrain()" style="width:100%;background:rgba(122,182,72,0.15);border:1px solid var(--accent);border-radius:12px;padding:11px;color:var(--accent2);font-size:13px;font-family:inherit;cursor:pointer;">↩ Revenir à mon terrain</button>
+    </div>
   </div>
 
   <!-- Filtres strates -->
@@ -270,9 +291,10 @@
     </div>
     <div class="gps-bar-wrap"><div class="gps-bar-fill" id="gps-bar"></div></div>
     <div class="gps-btns">
-      <button class="btn-validate" id="btn-validate-gps" onclick="validateGps()" disabled>✓ Valider</button>
+      <button class="btn-validate" id="btn-validate-gps" onclick="validateGps()" disabled>🌱 Ajouter ici</button>
       <button class="btn-adjust" id="btn-adjust-gps" onclick="toggleAdjust()" disabled>✋ Ajuster</button>
     </div>
+    <button class="btn-cancel-gps" id="btn-locate-only" onclick="locateOnly()" style="color:var(--accent2);" disabled>📍 Juste me repérer</button>
   </div>
 
   <!-- Bouton géolocalisation flottant -->
@@ -564,6 +586,8 @@ function startGps(){
   const btnA = document.getElementById('btn-adjust-gps');
   btnV.disabled = true; btnV.classList.remove('ready');
   btnA.disabled = true; btnA.classList.remove('ready','active');
+  const btnL = document.getElementById('btn-locate-only');
+  if(btnL) btnL.disabled = true;
   document.getElementById('gps-acc-display').textContent = '—';
   document.getElementById('gps-bar').style.width = '0%';
 
@@ -603,8 +627,10 @@ function onGpsUpdate(pos){
   // Activer les boutons
   const btnV=document.getElementById('btn-validate-gps');
   const btnA=document.getElementById('btn-adjust-gps');
+  const btnL=document.getElementById('btn-locate-only');
   btnV.disabled=false; btnV.classList.add('ready');
   btnA.disabled=false; btnA.classList.add('ready');
+  if(btnL) btnL.disabled=false;
 }
 
 function toggleAdjust(){
@@ -658,6 +684,21 @@ function validateGps(){
   openIdentifySheet(lat, lng, acc);
 }
 
+function locateOnly(){
+  // Se repérer sans ajouter — garder le point bleu 30s puis le retirer
+  if(!gpsBestPos) return;
+  stopGpsWatch();
+  document.getElementById('gps-overlay').classList.remove('open');
+  if(gpsDragMarker){ map.removeLayer(gpsDragMarker); gpsDragMarker=null; }
+  gpsAdjustMode = false;
+  toast('📍 Vous êtes ici');
+  // Le point bleu reste visible 30 secondes
+  setTimeout(() => {
+    if(gpsBlueMarker){ map.removeLayer(gpsBlueMarker); gpsBlueMarker=null; }
+    if(gpsBlueCircle){ map.removeLayer(gpsBlueCircle); gpsBlueCircle=null; }
+  }, 30000);
+}
+
 function cancelGps(){
   stopGpsWatch();
   document.getElementById('gps-overlay').classList.remove('open');
@@ -708,15 +749,20 @@ function setupAC(){
       list.innerHTML = matches.map((a,i) =>
         `<div class="ac-item" data-idx="${i}" onclick="pickAC(this)">
           <span style="font-size:20px">${a.emoji}</span>
-          <div><div>${a.nom}</div><div class="ac-strate">${a.strate}</div></div>
+          <div><div>${esc(a.nom)}</div><div class="ac-strate">${a.strate}</div></div>
         </div>`).join('');
       list.style.display = 'block';
     }, 250);
   };
-  document.addEventListener('click', e => {
-    if(!input.contains(e.target) && !list.contains(e.target)) list.style.display = 'none';
-  }, { once: true });
 }
+
+// Listener permanent unique : ferme la liste d'autocomplétion au clic extérieur
+document.addEventListener('click', e => {
+  const input = document.getElementById('inp-nom');
+  const list  = document.getElementById('ac-list');
+  if(!input || !list) return;
+  if(!input.contains(e.target) && !list.contains(e.target)) list.style.display = 'none';
+});
 
 function pickAC(el){
   const list = document.getElementById('ac-list');
@@ -742,7 +788,7 @@ function saveElement(){
   const rusticite = getRusticite(nom);
 
   const item = {
-    id: Date.now() + Math.random(),
+    id: genId(),
     nom, strate, cultivar, annee,
     lat: hasCoords ? lat : null,
     lng: hasCoords ? lng : null,
@@ -780,7 +826,8 @@ function createMarker(item){
   }).addTo(map);
 
   // Point coloré + nom en étiquette
-  const nomCourt = item.nom.length > 15 ? item.nom.substring(0,14)+'…' : item.nom;
+  const nomBrut = item.nom.length > 15 ? item.nom.substring(0,14)+'…' : item.nom;
+  const nomCourt = esc(nomBrut);
   const recentRing = recent ? 'outline:2px solid #a8d878;outline-offset:2px;' : '';
   const icon = L.divIcon({
     html: `<div style="display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);pointer-events:none;">
@@ -815,8 +862,8 @@ function showFiche(id){
 
   const rusticiteInfo = item.rusticite != null
     ? `<div class="fiche-badge alert">🌡️ Gel si < ${item.rusticite}°C</div>` : '';
-  const planted = item.annee ? `<div class="fiche-badge">📅 ${item.annee}</div>` : '';
-  const cultivarBadge = item.cultivar ? `<div class="fiche-badge">${item.cultivar}</div>` : '';
+  const planted = item.annee ? `<div class="fiche-badge">📅 ${esc(item.annee)}</div>` : '';
+  const cultivarBadge = item.cultivar ? `<div class="fiche-badge">${esc(item.cultivar)}</div>` : '';
   const locBadge = item.positioned
     ? `<div class="fiche-badge">📍 Géolocalisé</div>`
     : `<div class="fiche-badge" style="border-color:var(--gold);color:var(--gold);">⚠️ À positionner</div>`;
@@ -827,8 +874,8 @@ function showFiche(id){
     return `<div class="journal-entry">
       <div class="je-icon">${icon}</div>
       <div class="je-body">
-        <div class="je-cat">${cat}</div>
-        ${e.note ? `<div class="je-note">${e.note}</div>` : ''}
+        <div class="je-cat">${esc(cat)}</div>
+        ${e.note ? `<div class="je-note">${esc(e.note)}</div>` : ''}
         <div class="je-date">${new Date(e.date).toLocaleDateString('fr-FR',{day:'numeric',month:'long'})}</div>
       </div>
     </div>`;
@@ -844,8 +891,8 @@ function showFiche(id){
     </p>
     ${entries || '<p style="font-size:13px;color:var(--muted);font-style:italic;">Aucune entrée — commencez à suivre cet élément.</p>'}
     <button class="btn-sheet-primary" style="margin-top:14px;" onclick="openJournalSheet()">+ Nouvelle entrée</button>
-    <button class="btn-sheet-secondary" onclick="moveElement(${id})">📍 Déplacer</button>
-    <button class="btn-sheet-secondary" onclick="deleteElement(${id})">🗑 Supprimer</button>
+    <button class="btn-sheet-secondary" onclick="moveElement('${id}')">📍 Déplacer</button>
+    <button class="btn-sheet-secondary" onclick="deleteElement('${id}')">🗑 Supprimer</button>
   `;
 
   openSheet('sheet-fiche');
@@ -937,7 +984,34 @@ function processImport(){
   if(!raw) return;
   let recognised=0, unknown=0, total=0;
 
-  raw.split('\n').forEach(line => {
+  // ── Pré-traitement : fusionner les cellules multilignes quotées ──
+  // Le format réel (export tableur) contient des cellules entre guillemets
+  // avec des retours à la ligne internes. On les fusionne en une seule ligne logique.
+  const logicalLines = [];
+  let buffer = '';
+  let inQuote = false;
+  raw.split('\n').forEach(physLine => {
+    // Compter les guillemets pour savoir si on est dans une cellule ouverte
+    const quoteCount = (physLine.match(/"/g) || []).length;
+    if(inQuote){
+      buffer += ' ' + physLine.trim();
+      if(quoteCount % 2 === 1){ // guillemet fermant
+        inQuote = false;
+        logicalLines.push(buffer);
+        buffer = '';
+      }
+    } else {
+      if(quoteCount % 2 === 1){ // guillemet ouvrant sans fermeture
+        inQuote = true;
+        buffer = physLine;
+      } else {
+        logicalLines.push(physLine);
+      }
+    }
+  });
+  if(buffer) logicalLines.push(buffer);
+
+  logicalLines.forEach(line => {
     line = line.trim();
     if(!line) return;
     let nom='', qty=1, strate='arbre';
@@ -957,7 +1031,11 @@ function processImport(){
 
     nom = nom.replace(/\(Porte-greffe.*$/i,'').replace(/\(Hauteur.*$/i,'')
              .replace(/\s*[×x]\s*\d+.*$/,'').replace(/\s*-\s*Pot de.*$/i,'')
-             .replace(/^\s*"/, '').replace(/"\s*$/, '').trim();
+             .replace(/Pot de \d.*$/i,'').replace(/Godet de.*$/i,'')
+             .replace(/Racines nues.*$/i,'').replace(/le sachet de.*$/i,'')
+             .replace(/Bulbe calibre.*$/i,'').replace(/Prévu le.*$/i,'')
+             .replace(/Litrage\s*:.*$/i,'').replace(/\(greffé.*$/i,'')
+             .replace(/^\s*"/, '').replace(/"\s*$/, '').replace(/\s{2,}/g,' ').trim();
     if(!nom||nom.length<2) return;
 
     const db = ARBRES_DB.find(a =>
@@ -969,7 +1047,7 @@ function processImport(){
 
     for(let i=0;i<Math.min(qty,30);i++){
       inventaire.push({
-        id: Date.now()+Math.random(), nom, strate:stFinal,
+        id: genId(), nom, strate:stFinal,
         cultivar:'', annee:'', lat:null, lng:null,
         emoji, rusticite:getRusticite(nom),
         journal:[], positioned:false,
@@ -984,6 +1062,81 @@ function processImport(){
   document.getElementById('import-result').innerHTML =
     `✅ <strong>${total}</strong> éléments — ${recognised} reconnus, ${unknown} hors base.`;
   toast(`📋 ${total} éléments importés`);
+}
+
+// ================================================================
+// RECHERCHE D'ADRESSE (Nominatim)
+// ================================================================
+let addrDebounce = null;
+let preSearchView = null; // mémorise la vue avant recherche
+
+function toggleAddressSearch(){
+  const panel = document.getElementById('addr-search');
+  const visible = panel.style.display !== 'none';
+  if(visible){ closeAddressSearch(); return; }
+  panel.style.display = 'block';
+  const input = document.getElementById('addr-input');
+  input.value = '';
+  document.getElementById('addr-results').style.display = 'none';
+  setTimeout(()=>input.focus(), 100);
+
+  input.oninput = () => {
+    clearTimeout(addrDebounce);
+    const q = input.value.trim();
+    if(q.length < 3){ document.getElementById('addr-results').style.display='none'; return; }
+    addrDebounce = setTimeout(()=>searchAddress(q), 400);
+  };
+  input.onkeydown = (e) => { if(e.key==='Enter'){ clearTimeout(addrDebounce); searchAddress(input.value.trim()); } };
+}
+
+function closeAddressSearch(){
+  document.getElementById('addr-search').style.display = 'none';
+}
+
+async function searchAddress(q){
+  if(!q || q.length<3) return;
+  const resBox = document.getElementById('addr-results');
+  resBox.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--muted);">Recherche…</div>';
+  resBox.style.display = 'block';
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=fr&q=' + encodeURIComponent(q);
+    const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+    const results = await r.json();
+    if(!results.length){
+      resBox.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--muted);">Aucun résultat</div>';
+      return;
+    }
+    resBox.innerHTML = results.map((res,i) =>
+      `<div onclick="gotoAddress(${res.lat},${res.lon})" style="padding:12px 14px;font-size:13px;color:var(--text);cursor:pointer;border-bottom:1px solid var(--border);">📍 ${esc(res.display_name.split(',').slice(0,3).join(','))}</div>`
+    ).join('');
+  } catch(e){
+    resBox.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--muted);">Recherche indisponible</div>';
+  }
+}
+
+function gotoAddress(lat, lon){
+  // Mémoriser la vue actuelle pour pouvoir revenir
+  if(!preSearchView && mapInitialized){
+    preSearchView = { center: map.getCenter(), zoom: map.getZoom() };
+  }
+  if(!mapInitialized) initMap(lat, lon, 18);
+  else map.setView([lat, lon], 18);
+  closeAddressSearch();
+  // Afficher le bouton retour terrain
+  document.getElementById('addr-search').style.display = 'block';
+  document.getElementById('addr-input').style.display = 'none';
+  document.getElementById('addr-results').style.display = 'none';
+  document.getElementById('addr-back-home').style.display = 'block';
+}
+
+function backToTerrain(){
+  const bc = calcBarycentre();
+  if(bc) map.setView([bc.lat, bc.lng], 18);
+  else if(preSearchView) map.setView(preSearchView.center, preSearchView.zoom);
+  preSearchView = null;
+  document.getElementById('addr-search').style.display = 'none';
+  document.getElementById('addr-input').style.display = 'block';
+  document.getElementById('addr-back-home').style.display = 'none';
 }
 
 // ================================================================
@@ -1016,12 +1169,21 @@ function setStrateFilter(btn, strate){
 // MÉTÉO
 // ================================================================
 async function refreshMeteo(){
-  // Utiliser la position GPS ou une position centrale si disponible
-  const pos = gpsBestPos || await getGpsOnce();
-  if(!pos) return;
-  const { latitude: lat, longitude: lng } = pos.coords;
+  // Ordre de fallback : barycentre du terrain (le plus fiable) → GPS actuel → GPS unique → message
+  let lat = null, lng = null;
+  const bc = calcBarycentre();
+  if(bc){ lat = bc.lat; lng = bc.lng; }
+  else if(gpsBestPos){ lat = gpsBestPos.coords.latitude; lng = gpsBestPos.coords.longitude; }
+  else {
+    const pos = await getGpsOnce();
+    if(pos){ lat = pos.coords.latitude; lng = pos.coords.longitude; }
+  }
+  if(lat == null){
+    toast('📍 Positionnez un élément ou activez le GPS pour la météo');
+    return;
+  }
   const now = Date.now();
-  if(meteoData && (now-lastMeteoFetch)<3600000){ applyAlerts(); return; }
+  if(meteoData && (now-lastMeteoFetch)<3600000){ applyAlerts(); renderMeteo(); return; }
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&daily=precipitation_sum,temperature_2m_min&past_days=14&forecast_days=7&timezone=auto`;
     const r = await fetch(url);
@@ -1030,7 +1192,7 @@ async function refreshMeteo(){
     renderMeteo();
     applyAlerts();
     toast('🌦 Météo mise à jour');
-  } catch(e){ console.warn('Météo:',e); }
+  } catch(e){ console.warn('Météo:',e); toast('❌ Météo indisponible'); }
 }
 
 function getGpsOnce(){
@@ -1079,6 +1241,17 @@ function applyAlerts(){
 // ================================================================
 // UTILS
 // ================================================================
+function genId(){
+  return (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function esc(s){
+  if(s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function getRusticite(nom){
   const n=nom.toLowerCase();
   for(const [k,v] of Object.entries(RUSTICITE)) if(n.includes(k)) return v;
@@ -1120,7 +1293,13 @@ function load(){
     const raw = localStorage.getItem('vp_terrain');
     if(!raw) return;
     inventaire = JSON.parse(raw);
-    // Les marqueurs seront créés quand initMap sera appelé
+    // Migration : IDs numériques (anciens) → chaînes
+    let migrated = false;
+    inventaire.forEach(item => {
+      if(typeof item.id === 'number'){ item.id = String(item.id); migrated = true; }
+      if(!item.journal) item.journal = [];
+    });
+    if(migrated) save();
   } catch(e){ inventaire=[]; }
 }
 
@@ -1132,6 +1311,72 @@ function updateHomeStats(){
   document.getElementById('cnt-total').textContent  = total;
   document.getElementById('cnt-placed').textContent = placed;
   document.getElementById('cnt-today').textContent  = recent;
+  // Rappel sauvegarde
+  const lastBackup = localStorage.getItem('vp_last_backup');
+  const reminder = document.getElementById('backup-reminder');
+  if(reminder && total > 0){
+    const days = lastBackup ? (Date.now() - parseInt(lastBackup)) / 86400000 : 999;
+    reminder.style.display = days > 30 ? 'block' : 'none';
+  }
+}
+
+// ================================================================
+// EXPORT / RESTAURATION (sauvegarde de secours)
+// ================================================================
+function exportData(){
+  if(!inventaire.length){ toast('Rien à sauvegarder'); return; }
+  const data = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    inventaire: inventaire.map(({marker,...r})=>r)
+  };
+  const blob = new Blob([JSON.stringify(data, null, 1)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const d = new Date();
+  a.href = url;
+  a.download = `verger-terrain-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  localStorage.setItem('vp_last_backup', String(Date.now()));
+  updateHomeStats();
+  toast(`💾 ${inventaire.length} éléments sauvegardés`);
+}
+
+function restoreData(input){
+  const file = input.files?.[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      const items = data.inventaire || data; // accepte les deux formats
+      if(!Array.isArray(items)) throw new Error('Format invalide');
+      if(!confirm(`Restaurer ${items.length} éléments ? Cela remplacera les ${inventaire.length} éléments actuels.`)) {
+        input.value = ''; return;
+      }
+      // Nettoyer les marqueurs existants
+      inventaire.forEach(i => {
+        if(i.marker){ try{ map.removeLayer(i.marker); if(i.marker._circle) map.removeLayer(i.marker._circle); }catch(e){} }
+      });
+      inventaire = items.map(it => ({...it, id: String(it.id), journal: it.journal||[]}));
+      save();
+      // Recréer les marqueurs si la carte est initialisée
+      if(mapInitialized){
+        inventaire.forEach(item => {
+          if(item.lat && item.lng) item.marker = createMarker(item);
+        });
+      }
+      updateHomeStats();
+      toast(`♻️ ${inventaire.length} éléments restaurés`);
+    } catch(e){
+      alert('Fichier invalide — vérifiez qu\'il s\'agit bien d\'un export verger-terrain');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
 }
 
 // ================================================================
@@ -1174,6 +1419,11 @@ function toast(msg){
 // ================================================================
 load();
 updateHomeStats();
+
+// Service worker (PWA + hors ligne) — uniquement en HTTPS
+if('serviceWorker' in navigator && location.protocol === 'https:'){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
 </script>
 </body>
 </html>
